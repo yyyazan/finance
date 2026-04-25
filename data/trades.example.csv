@@ -1,0 +1,5 @@
+ticker,action,shares,date
+AAPL,buy,1.5,2024-01-15
+NVDA,buy,2.0,2024-02-03
+AAPL,sell,0.5,2024-03-20
+VOO,buy,0.3,2024-04-10

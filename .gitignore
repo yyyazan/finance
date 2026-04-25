@@ -1,0 +1,45 @@
+# ── Sensitive data ────────────────────────────────────────────────────────
+# Real trades and transactions never get committed.
+# Schema is documented via data/*.example.csv (which IS committed).
+data/*.csv
+!data/*.example.csv
+
+# Local DuckDB cache (regenerable from yfinance)
+data/*.duckdb
+data/*.duckdb.wal
+
+# Secrets — if you ever add them
+.env
+.env.local
+*.key
+*.pem
+
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# ── Jupyter ───────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+notebooks/portfolio.ipynb
+
+# ── IDE / OS junk ─────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.claude/
+*.iml
+.DS_Store
+Thumbs.db
+CLAUDE.md
