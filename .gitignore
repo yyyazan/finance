@@ -49,7 +49,7 @@ notebooks/.
 .DS_Store
 Thumbs.db
 CLAUDE.md
-var/
+data/
 web/node_modules/
 web/.svelte-kit/
 web/build/

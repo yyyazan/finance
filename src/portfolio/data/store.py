@@ -25,7 +25,7 @@ import pandas as pd
 from portfolio.data import db as db_mod
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-PARQUET_DIR = Path(os.environ.get("PORTFOLIO_PRICES", _REPO_ROOT / "var" / "prices"))
+PARQUET_DIR = Path(os.environ.get("PORTFOLIO_PRICES", _REPO_ROOT / "data" / "prices"))
 _HISTORY_DIR = PARQUET_DIR / "history"
 _SPLITS_DIR = PARQUET_DIR / "splits"
 _PROFILE_DIR = PARQUET_DIR / "profile"

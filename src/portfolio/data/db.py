@@ -22,7 +22,7 @@ from pathlib import Path
 
 # Repo root = three levels up from this file (src/portfolio/data/db.py).
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_DB_PATH = Path(os.environ.get("PORTFOLIO_DB", _REPO_ROOT / "var" / "portfolio.db"))
+DEFAULT_DB_PATH = Path(os.environ.get("PORTFOLIO_DB", _REPO_ROOT / "data" / "portfolio.db"))
 
 DEFAULT_USER_ID = 1
 # Untraced cash drift seeded for the default user (FX rounding + legacy fees).
