@@ -12,6 +12,7 @@
 
   let moveWin = $state('day');   // 'day' | 'wk'
   let selected = $state(null);   // ticker; null = biggest mover
+  let hovered = $state(null);    // index of card under cursor (geometry-driven, not :hover)
   let moves = $state({});        // live /api/momentum overlay
 
   const SUIT_SYMBOL = { sp: '♠', ht: '♥', dm: '♦', cl: '♣', jk: '★' };
@@ -59,6 +60,17 @@
     return Math.max(16, Math.min(CARD_W, (fanW - CARD_W) / (n - 1)));
   });
 
+  // Which card is "hovered" is a pure function of cursor-X over the fixed fan
+  // geometry (each card advances by `fanStep`) — NOT per-card :hover. A popped
+  // card covers its right neighbours, so :hover would get stuck on it and skip
+  // ~5 cards when scrubbing left→right. Geometry can't be fooled by what's
+  // painted on top, so both scrub directions flip through cards smoothly.
+  function onFanMove(e) {
+    if (!fanStep) return;
+    const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
+    hovered = Math.max(0, Math.min(Math.floor(x / fanStep), visibleMovers.length - 1));
+  }
+
   const peekH = $derived((selected && holdings.find((h) => h.t === selected)) || movers[movers.length - 1] || null);
   const peek = $derived.by(() => {
     const h = peekH;
@@ -99,10 +111,10 @@
   </div>
 
   <div class="felt">
-    <div class="mfan" bind:clientWidth={fanW}>
+    <div class="mfan" role="group" bind:clientWidth={fanW} onpointermove={onFanMove} onpointerleave={() => (hovered = null)}>
       {#each visibleMovers as h, i (h.t)}
         {@const mv = moveOf(h, moveWin)}
-        <button class="mcard suit-{h.suit}" class:selected={selected === h.t}
+        <button class="mcard suit-{h.suit}" class:selected={selected === h.t} class:hovered={hovered === i}
                 style="margin-left:{i === 0 ? 0 : fanStep - CARD_W}px; --sliver:{fanStep}px"
                 onclick={() => (selected = selected === h.t ? null : h.t)}>
           <div class="mstrip {mv >= 0 ? 'up' : 'down'}">
@@ -206,7 +218,9 @@
     background: var(--surface); border: var(--bw) solid var(--ink); border-radius: 10px; box-shadow: var(--sh);
     cursor: pointer; overflow: hidden; padding: 0; font: inherit; color: inherit; text-align: left;
     transition: transform .16s ease, box-shadow .16s ease; }
-  .mcard:hover { z-index: 999; transform: translateY(-20px); box-shadow: var(--sh-pop); }
+  /* .hovered (not :hover) — set by onFanMove from cursor-X, so a popped card
+     covering its neighbours never traps the hover. See onFanMove for why. */
+  .mcard.hovered { z-index: 999; transform: translateY(-20px); box-shadow: var(--sh-pop); }
   /* clicked card lifts + ink ring; no sibling spread (the peek carries the detail,
      and spreading pushed cards out over the peek) */
   .mcard.selected { z-index: 998; transform: translateY(-20px); box-shadow: var(--sh-pop); outline: 3px solid var(--brand); outline-offset: -3px; }
