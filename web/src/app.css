@@ -82,7 +82,8 @@ a { color: inherit; text-decoration: none; }
 .nav-icon { color: inherit; flex-shrink: 0; width: 18px; text-align: center; font-size: 15px; }
 
 .content { padding: 24px 28px; box-sizing: border-box; width: 100%; min-width: 0; max-width: 1400px; margin-inline: auto; display: flex; flex-direction: column; gap: 18px; }
-.content-has-hero { padding-top: 0; }
+/* dashboard only: tighter, even rhythm between garden · KPIs · deck · ribbon */
+.content-has-hero { padding-top: 0; gap: 14px; }
 .page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
 .page-subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .page-content { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -165,9 +166,27 @@ table.data-table tbody tr:hover { background: #fffdf3; }
 .widget-xl { grid-column: span 4; grid-row: span 2; }
 .widget-tall { grid-column: span 2; grid-row: span 3; }
 
+/* ── Dashboard KPI strip (between garden and deck; all three fit the fold) ─────
+   Compact, equal-width cards — denser than a full widget tile, still breathing.
+   Cards carry a supporting figure (e.g. cash %), not just one number. */
+.kpi-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; width: 100%; }
+.kpi-strip .glass-card { min-height: 112px; padding: 16px 18px; }
+.kpi-strip .kpi-value { font-size: 26px; }
+.kpi-strip .spark-card { grid-column: span 2; }   /* jade hero = 2×1 */
+
+/* Spark value card: figure rides above an ambient area chart that bleeds to the
+   card edges. preserveAspectRatio="none" stretches the fixed viewBox full-bleed. */
+.spark-card { position: relative; overflow: hidden; }
+.spark-card .spark-content { position: relative; z-index: 1; }
+.spark-card .kpi-value { font-size: 30px; }
+.spark-bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.spark-stop-top { stop-color: var(--brand-deep); stop-opacity: .42; }
+.spark-stop-bot { stop-color: var(--brand-deep); stop-opacity: .03; }
+
 /* ── Garden hero band + greeting (garden three.js reskin handled separately) ── */
 .garden-band { width: 100%; margin: 0; }
-.garden-canvas-root { width: 100%; height: 380px; position: relative; }
+/* Slim band (was a 380px hero) so the bento numbers reach into the first screen. */
+.garden-canvas-root { width: 100%; height: clamp(180px, 23vw, 230px); position: relative; }
 .page-hero { position: relative; margin: 0 -28px; }
 .page-header-overlay { position: absolute; top: 0; left: 0; right: 0; padding: 20px 28px 0; z-index: 2; pointer-events: none; }
 .garden-canvas { display: block; width: 100% !important; height: 100% !important; }
@@ -238,10 +257,12 @@ table.data-table tbody tr:hover { background: #fffdf3; }
   .content { padding: 16px; }
   .page-hero { margin: 0 -16px; }
   .page-header-overlay { padding: 14px 16px 0; }
-  .garden-canvas-root { height: 240px; }
+  .garden-canvas-root { height: 180px; }
   .greeting-title { font-size: 30px; }
   .widget-grid { --unit: clamp(130px, 42vw, 170px); --gap: 12px; grid-template-columns: repeat(2, var(--unit)); }
   .widget-medium, .widget-large, .widget-xl, .widget-tall { grid-column: span 2; }
+  /* Mobile precedent (full mobile pass is a separate session): KPI cards go 2-up. */
+  .kpi-strip { grid-template-columns: repeat(2, 1fr); gap: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .portfolio-card, .portfolio-card::after, .nav-link { transition: none; }

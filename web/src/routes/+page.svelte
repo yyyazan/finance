@@ -1,11 +1,9 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
-  import { equity } from '$lib/charts.js';
   import KpiCard from '$lib/components/KpiCard.svelte';
+  import SparkValueCard from '$lib/components/SparkValueCard.svelte';
   import ProgressCard from '$lib/components/ProgressCard.svelte';
-  import ChartCard from '$lib/components/ChartCard.svelte';
-  import AllocationPanel from '$lib/components/AllocationPanel.svelte';
   import MomentumDeck from '$lib/components/MomentumDeck.svelte';
   import GardenView from '$lib/components/GardenView.svelte';
 
@@ -33,17 +31,18 @@
       </div>
     </div>
 
+    <div class="kpi-strip">
+      <SparkValueCard label="Portfolio Value" value={d.kpis.portfolio_value} series={d.equity_curve.y} subtitle="since inception" />
+      <KpiCard label="Total P&L" value={d.kpis.total_pnl} kind="money_compact" size="strip" subtitle="unrealized + realized" tone="gain" />
+      <KpiCard label="S&P500 delta" value={d.kpis.spy_delta} kind="percent" size="strip" subtitle="since inception" />
+      <KpiCard label="Cash" value={d.kpis.cash} kind="money" size="strip"
+        subtitle={d.kpis.portfolio_value ? `${((d.kpis.cash / d.kpis.portfolio_value) * 100).toFixed(0)}% of portfolio` : 'available'} />
+      <ProgressCard label="goal" current={d.goal.current} target={d.goal.target} size="strip" />
+    </div>
+
     <MomentumDeck cards={d.cards} />
 
-    <div class="widget-grid">
-      <KpiCard label="Cash" value={d.kpis.cash} kind="money" size="small" subtitle="available · incl. manual reconciliation offset" />
-      <KpiCard label="S&P500 delta" value={d.kpis.spy_delta} kind="percent" size="small" subtitle="since inception" />
-      <KpiCard label="Portfolio Value" value={d.kpis.portfolio_value} kind="money" size="medium" subtitle="equity + cash" tone="brand" />
-      <AllocationPanel alloc={d.allocation} size="tall" />
-      <ProgressCard label="goal" current={d.goal.current} target={d.goal.target} size="medium" />
-      <KpiCard label="Total P&L" value={d.kpis.total_pnl} kind="money_compact" size="medium" subtitle="unrealized + realized" tone="gain" />
-      <ChartCard title="Portfolio Value" chart={equity(d.equity_curve)} size="xl" />
-    </div>
+    <!-- under-deck: TBD — next build step -->
   </div>
 {:else}
   <div class="content"><p style="color:var(--muted)">Loading…</p></div>
