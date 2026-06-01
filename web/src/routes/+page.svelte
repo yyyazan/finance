@@ -33,7 +33,7 @@
     </div>
 
     <div class="kpi-strip">
-      <SparkValueCard label="Portfolio Value" value={d.kpis.portfolio_value} series={d.equity_curve.y} subtitle="since inception" />
+      <SparkValueCard label="Portfolio Value" value={d.kpis.portfolio_value} series={d.equity_curve.y} />
       <KpiCard label="Total P&L" value={d.kpis.total_pnl} kind="money_compact" size="strip" subtitle="unrealized + realized" tone="gain" />
       <KpiCard label="S&P500 delta" value={d.kpis.spy_delta} kind="percent" size="strip" subtitle="since inception" />
       <KpiCard label="Cash" value={d.kpis.cash} kind="money" size="strip"

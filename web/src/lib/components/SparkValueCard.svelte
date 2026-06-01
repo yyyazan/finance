@@ -28,7 +28,7 @@
     <svg class="spark-bg" viewBox="0 0 {VW} {VH}" preserveAspectRatio="none" aria-hidden="true">
       <defs>
         <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop class="spark-stop-top" offset="0%" />
+          <stop class="spark-stop-top" offset="100%" />
           <stop class="spark-stop-bot" offset="100%" />
         </linearGradient>
       </defs>

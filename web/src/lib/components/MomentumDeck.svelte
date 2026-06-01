@@ -63,11 +63,14 @@
   const peek = $derived.by(() => {
     const h = peekH;
     if (!h) return null;
+    // `basis` is the per-share weighted avg cost (API: total_invested = basis × shares),
+    // so total invested = basis × shares. Don't divide basis by shares again.
+    const invested = h.basis != null && h.shares ? h.basis * h.shares : null;
     return {
       ...h,
-      avg: h.shares ? h.basis / h.shares : null,
-      retPct: h.basis ? (h.value / h.basis - 1) * 100 : null,
-      gain: h.basis ? h.value - h.basis : null,
+      avg: h.basis ?? null,
+      retPct: invested ? (h.value / invested - 1) * 100 : null,
+      gain: invested != null ? h.value - invested : null,
       dayMove: moveOf(h, 'day'),
       weekMove: moveOf(h, 'wk'),
     };

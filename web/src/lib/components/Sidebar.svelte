@@ -1,9 +1,8 @@
 <script>
   import { page } from '$app/stores';
   const NAV = [
-    { label: 'Dashboard', path: '/', glyph: '◇' },
-    { label: 'Investments', path: '/investments', glyph: '↗' },
-    { label: 'Log', path: '/trades', glyph: '↓' }
+    { label: 'home', path: '/', glyph: '❖' },
+    { label: 'log', path: '/trades', glyph: '⊞' }
   ];
   function isActive(pathname, path) {
     return path === '/' ? pathname === '/' : pathname.startsWith(path);
