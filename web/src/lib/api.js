@@ -21,6 +21,7 @@ async function post(path, body) {
 export const api = {
   dashboard: () => get('/dashboard'),
   momentum: () => get('/momentum'),
+  stock: (t) => get('/stock/' + encodeURIComponent(t)),
   investments: () => get('/investments'),
   garden: () => get('/garden'),
   trades: () => get('/trades'),
