@@ -5,6 +5,7 @@
   // peek defaults to the biggest mover.
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
+  import StockDeepView from '$lib/components/StockDeepView.svelte';
 
   // `chart` is an optional snippet rendered in the empty cols 4–6 of the deck row
   // (the space the 1×2 peek freed) — the dashboard passes the portfolio chart there.
@@ -23,6 +24,7 @@
       t: c.ticker, name: c.company_name, suit: c.suit,
       pct: c.position_pct, day: c.day_pct, wk: c.week_pct, ret: c.voo_delta_pp ?? 0,
       value: c.market_value, last: c.current_price, shares: c.shares, basis: c.cost_basis,
+      hold: c.hold_days, domain: c.domain,
     }))
   );
 
@@ -110,9 +112,22 @@
     const t = setInterval(loadMomentum, 60_000);
     return () => clearInterval(t);
   });
+
+  // ── click the peek to expand it rightward into a (blank) deep panel. Content
+  // is stripped for now — we're tuning the expand/contract + shadow motion. ──
+  let expanded = $state(false);
+  let peekW = $state(0);     // measured 1-col width → the left spine matches it exactly
+
+  // The allocation ribbon drives the deep view: choosing a holding engages (expands the
+  // peek into) the deep view; clicking the already-selected one again unselects it and
+  // disengages back to the collapsed peek.
+  function pickFromRibbon(t) {
+    if (selected === t) { selected = null; expanded = false; }
+    else { selected = t; expanded = true; }
+  }
 </script>
 
-<div class="deck-peek">
+<div class="deck-peek" class:expanded>
   <div class="deck-col">
     <div class="felt">
     <div class="winbar" style="left: calc({toggleAnchor}px + var(--toggle-x))">
@@ -155,37 +170,55 @@
   </div>
 
   {#if peek}
-    <aside class="peek">
-      <a class="glass-card peek-card" href="/investments/{peek.t}" aria-label="Full analysis: {peek.t}">
-        <div class="peek-top">
-          <div class="peek-badge suit-{peek.suit}">{rankOf[peek.t]}<span class="badge-suit">{SUIT_SYMBOL[peek.suit]}</span></div>
-          <div class="peek-id">
-            <div class="peek-tkr">{peek.t}</div>
-            <div class="peek-name">{peek.name}</div>
+    <aside class="peek" bind:clientWidth={peekW} style={peekW ? `--pw:${peekW}px` : ''}>
+      <!-- the ink shadow is its own layer so it can outpace the white body + bounce -->
+      <div class="peek-shadow"></div>
+      <!-- click to expand; the ← / → button is the explicit toggle -->
+      <div class="peek-card glass-card" class:expanded>
+
+        <!-- LEFT spine = the mini peek; it's the full button (hover + click) that
+             toggles the deep view in BOTH collapsed and expanded modes -->
+        <div class="peek-left" role="button" tabindex="0" aria-expanded={expanded}
+             aria-label={expanded ? `${peek.t} — collapse deep view` : `Inspect ${peek.t} — expand`}
+             onclick={() => (expanded = !expanded)}
+             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expanded = !expanded; } }}>
+          <div class="peek-top">
+            <div class="peek-badge suit-{peek.suit}">{rankOf[peek.t]}<span class="badge-suit">{SUIT_SYMBOL[peek.suit]}</span></div>
+            <div class="peek-id">
+              <div class="peek-tkr">{peek.t}</div>
+              <div class="peek-name">{peek.name}</div>
+            </div>
+            <span class="peek-go" aria-hidden="true">→</span>
           </div>
-          <span class="peek-go" aria-hidden="true">→</span>
+
+          <div class="peek-price">
+            <span class="peek-px">${f(peek.last)}</span>
+            <span class="peek-day {peek.dayMove >= 0 ? 'up' : 'down'}">{peek.dayMove >= 0 ? '▲' : '▼'} {pctS(peek.dayMove)}</span>
+          </div>
+
+          <div class="peek-sub">your return</div>
+          {#if peek.retPct != null}
+            <div class="peek-hero {peek.retPct >= 0 ? 'up' : 'down'}">
+              <span class="peek-ret">{pctS(peek.retPct)}</span>
+              <span class="peek-ret-abs">{usd(peek.gain)}</span>
+            </div>
+          {:else}
+            <div class="peek-hero"><span class="peek-ret">—</span></div>
+          {/if}
+
+          <div class="peek-rows">
+            <div class="pr"><span>value</span><b>${f(peek.value)}</b></div>
+            <div class="pr"><span>shares</span><b>{f(peek.shares)}</b></div>
+            <div class="pr"><span>weight</span><b>{peek.pct}%</b></div>
+          </div>
         </div>
 
-        <div class="peek-sub">your return</div>
-        {#if peek.retPct != null}
-          <div class="peek-hero {peek.retPct >= 0 ? 'up' : 'down'}">
-            <span class="peek-ret">{pctS(peek.retPct)}</span>
-            <span class="peek-ret-abs">{usd(peek.gain)}</span>
-          </div>
-        {:else}
-          <div class="peek-hero"><span class="peek-ret">—</span></div>
-        {/if}
-
-        <div class="peek-rows">
-          <div class="pr"><span>value</span><b>${f(peek.value)}</b></div>
-          <div class="pr"><span>weight</span><b>{peek.pct}%</b></div>
-          <div class="pr"><span>today</span><b class={peek.dayMove >= 0 ? 'up' : 'down'}>{pctS(peek.dayMove)}</b></div>
-          <div class="pr"><span>this week</span><b class={peek.weekMove >= 0 ? 'up' : 'down'}>{pctS(peek.weekMove)}</b></div>
-          <div class="pr"><span>avg cost</span><b>{peek.avg != null ? `$${f(peek.avg)}` : '—'}</b></div>
-          <div class="pr"><span>last</span><b>${f(peek.last)}</b></div>
+        <!-- DEEP panel — in-depth stock view (mounts on expand) -->
+        <div class="peek-deep">
+          {#if expanded}<StockDeepView holding={peek} />{/if}
         </div>
 
-      </a>
+      </div>
     </aside>
   {/if}
 
@@ -199,7 +232,7 @@
   {#each byWeight as h (h.t)}
     <button class="ribbon-seg" class:selected={selected === h.t} style="flex-grow:{h.pct}"
             title="{h.name} · {h.pct}% of portfolio · ${f(h.value)}"
-            onclick={() => (selected = selected === h.t ? null : h.t)}>
+            onclick={() => pickFromRibbon(h.t)}>
       <span class="seg-tkr">{h.t}</span>
     </button>
   {/each}
@@ -213,7 +246,8 @@
      deck = 2×2, slot = 2×1 (below deck), peek = 1×3, chart = 3×3. left column
      (deck 2 rows + gap + slot 1 row) = exactly the 3 rows peek/chart span. */
   .deck-peek { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
-    grid-auto-rows: var(--u); gap: 16px; align-items: stretch; }
+    grid-auto-rows: var(--u); gap: 16px; align-items: stretch;
+    margin-top: 20px; /* nudge the whole deck region clear of the P&L strip above */ }
   /* 1d / 1wk — black radio; tucked into the deck's top-right corner.
      temporarily hidden to free vertical room in the 2×1 slot — delete `display:none` to restore. */
   /* 1d/1wk — compact control floated in the deck's top-right corner (over the
@@ -221,9 +255,9 @@
   /* `left` is set inline from `toggleAnchor` (the fan's right edge, measured in JS) so
      it tracks the cards on resize instead of drifting. --toggle-x nudges it. */
   .winbar { --toggle-x: 10px; position: absolute; top: 82%; right: auto;
-    transform: translate(-50%, -50%); z-index: 3;
+    transform: translate(-50%, calc(-50% - 5px)); z-index: 3;
     display: inline-flex; flex-direction: column;
-    border: var(--bw) solid var(--ink); border-radius: var(--r); overflow: hidden; box-shadow: var(--sh); }
+    border: var(--bw) solid var(--ink); border-radius: var(--r); overflow: hidden; }
   .winbar button { font-family: var(--mono); font-size: 9px; font-weight: 700; cursor: pointer; padding: 4px 2px;
     background: var(--surface); color: var(--ink); border: 0; border-bottom: var(--bw) solid var(--ink); }
   .winbar button:last-child { border-bottom: 0; }
@@ -311,13 +345,61 @@
 
   /* portfolio chart — fills the cols the 1×2 peek freed, same row & height as the peek */
   .deck-chart { grid-column: 4 / 7; grid-row: 1 / span 2; }
-  /* the whole card is the link to full analysis — a corner arrow is the only cue,
-     no bulky button. hover gives the standard brutalist lift. */
-  .peek-card { height: 100%; padding: 16px; display: flex; flex-direction: column; color: inherit; text-decoration: none;
-    transition: transform .12s ease, box-shadow .12s ease; }
-  /* hover slides the ink shadow 5px further right (12px vs the popped 7px) */
-  .peek-card:hover { transform: translate(-2px, -2px); box-shadow: 12px 7px 0 var(--ink); }
-  .peek-top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  /* ── click-to-expand deep panel — animation focus ─────────────────────────
+     The card grows 1→4 cols (400% + 3×16px gaps), sliding over the chart slot.
+     The ink shadow is a SEPARATE layer so it can outpace the white body + bounce.
+     Easing is cubic ease-in-out both ways; the bounce is a gentle shadow-offset
+     kick (small, so EXPAND never overshoots outward → no scrollbar). */
+  .peek-card { position: absolute; top: 0; left: 0; bottom: 0; width: 100%;
+    display: flex; align-items: stretch; padding: 0; overflow: hidden; cursor: default;
+    color: inherit; text-decoration: none; box-shadow: none; z-index: 2;
+    transition: width .29s cubic-bezier(.65, 0, .35, 1); }
+  .deck-peek:not(.expanded) .peek-card { transition-timing-function: cubic-bezier(.5, 0, .3, 1.03); }
+
+  /* the hard ink shadow on its own layer — a shorter duration than the body so the
+     black outpaces the white; its offset eases back to a normal 4px on expand */
+  .peek-shadow { position: absolute; top: 0; left: 0; bottom: 0; width: 100%; z-index: 1;
+    background: var(--ink); border-radius: var(--r); pointer-events: none;
+    transform: translate(4px, 4px);
+    transition: width .2s cubic-bezier(.65, 0, .35, 1), transform .18s cubic-bezier(.5, 0, .3, 1.06); }
+  .deck-peek:not(.expanded) .peek-shadow { transition-timing-function: cubic-bezier(.65, 0, .35, 1), cubic-bezier(.5, 0, .3, 1.06); }
+  /* hovering the left spine (the button) slides the shadow out — in BOTH modes */
+  .peek:has(.peek-left:hover) .peek-shadow { transform: translate(12px, 7px); }
+
+  .deck-peek.expanded .peek { z-index: 60; }
+  .deck-peek.expanded .peek-card { width: calc(400% + 48px); cursor: default; }
+  .deck-peek.expanded .peek-shadow { width: calc(400% + 48px); transform: translate(4px, 4px);
+    animation: sh-expand .28s cubic-bezier(.65, 0, .35, 1); }
+
+  /* a small kick out, then eased back to the normal 4px size — gentle cubic in/out */
+  @keyframes sh-expand {
+    0%   { transform: translate(4px, 4px); }
+    55%  { transform: translate(7px, 6px); }
+    100% { transform: translate(4px, 4px); }
+  }
+
+  /* the portfolio chart fades + blurs out as the deep panel grows over its columns */
+  .deck-chart { transition: opacity .21s ease, filter .21s ease; }
+  .deck-peek.expanded .deck-chart { opacity: 0; filter: blur(2px); pointer-events: none; }
+
+  /* LEFT spine = the mini peek at exactly the collapsed card's inner width */
+  .peek-left { box-sizing: border-box; padding: 16px; display: flex; flex-direction: column; min-width: 0; cursor: pointer;
+    width: calc(var(--pw, 100%) - 2 * var(--bw)); flex: 0 0 calc(var(--pw, 100%) - 2 * var(--bw)); }
+  .peek-left:focus-visible { outline: 2.5px solid var(--brand); outline-offset: -3px; border-radius: var(--r); }
+  .deck-peek.expanded .peek-left { border-right: var(--bw) solid var(--ink); }
+
+  /* DEEP panel — blank slate for now */
+  .peek-deep { flex: 1 1 auto; min-width: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .peek-card, .peek-shadow, .deck-chart { transition: none; }
+    .deck-peek.expanded .peek-shadow { animation: none; }
+  }
+  .peek-top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  /* the stock's live price — the prominent line, sitting above "your return" */
+  .peek-price { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
+  .peek-px { font-family: var(--mono); font-size: 25px; font-weight: 700; line-height: 1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .peek-day { font-family: var(--mono); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .peek-badge { width: 40px; height: 40px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 16px; background: var(--suit, var(--brand)); border: var(--bw) solid var(--ink); border-radius: 8px; }
   .badge-suit { font-size: 10px; -webkit-text-stroke: .75px var(--ink); paint-order: stroke fill; }
@@ -325,9 +407,19 @@
   .peek-tkr { font-size: 18px; font-weight: 700; }
   .peek-name { font-family: var(--mono); font-size: 11px; color: var(--muted);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .peek-go { flex: 0 0 auto; font-family: var(--sans); font-size: 20px; font-weight: 700; color: var(--muted);
-    transition: color .12s ease, transform .12s ease; }
-  .peek-card:hover .peek-go { color: var(--ink); transform: translateX(3px); }
+  .peek-go { flex: 0 0 auto; font-family: var(--sans); font-size: 20px; font-weight: 700; line-height: 1; color: var(--muted);
+    transition: color .1s ease, transform .24s cubic-bezier(.5, 0, .3, 1.12); }
+  /* the whole left spine is the button — emphasise the arrow while it's hovered */
+  .peek:has(.peek-left:hover) .peek-go { color: var(--ink); }
+  .deck-peek:not(.expanded) .peek:has(.peek-left:hover) .peek-go { transform: translateX(3px); }
+  /* expanded: arrow points back (←); it flips in with the same gentle bounce as expand */
+  .deck-peek.expanded .peek-go { transform: rotate(180deg); color: var(--ink);
+    animation: ar-flip .28s cubic-bezier(.65, 0, .35, 1); }
+  @keyframes ar-flip {
+    0%   { transform: rotate(0deg); }
+    55%  { transform: rotate(192deg); }
+    100% { transform: rotate(180deg); }
+  }
   .peek-sub { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; color: var(--ink);
     opacity: .55; margin-bottom: 3px; }
   /* stacked (% over $) so the hero is always two lines → peek height never shifts */
@@ -357,5 +449,11 @@
     .deck-peek { grid-template-columns: 1fr; grid-auto-rows: auto; }
     .felt, .deck-slot, .peek, .deck-chart { grid-column: 1; grid-row: auto; }
     .deck-chart { min-height: 320px; }
+    /* stacked column: no sideways room — keep the mini peek, drop the shadow layer */
+    .peek-shadow { display: none; }
+    .peek-card { position: relative; width: 100% !important; height: auto; box-shadow: var(--sh); }
+    .deck-peek .peek-left { width: 100%; flex: 1 1 auto; border-right: 0 !important; }
+    .peek-deep { display: none; }
+    .deck-peek.expanded .deck-chart { opacity: 1; filter: none; pointer-events: auto; }
   }
 </style>
