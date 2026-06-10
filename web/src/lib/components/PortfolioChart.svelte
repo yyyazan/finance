@@ -192,6 +192,7 @@
 </script>
 
 <div class="glass-card pc-card">
+  <div class="pc-eyebrow"><span class="pc-dot" aria-hidden="true"></span>Your portfolio</div>
   <div class="pc-head">
     <div class="pc-read">
       <div class="pc-label">
@@ -237,7 +238,13 @@
 </div>
 
 <style>
-  .pc-card { display: flex; flex-direction: column; padding: 16px 18px; gap: 10px; height: 100%; }
+  /* the portfolio hero — a brand top-edge + eyebrow mark it as YOUR whole portfolio,
+     so it's never mistaken for a single-stock card (those open as a full overlay). */
+  .pc-card { display: flex; flex-direction: column; padding: 14px 18px 16px; gap: 10px; height: 100%;
+    }
+  .pc-eyebrow { display: flex; align-items: center; gap: 7px; font-family: var(--sans); font-size: 10px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: .14em; color: var(--brand); }
+  .pc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); border: 1.5px solid var(--ink); }
 
   .pc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .pc-read { min-width: 0; }

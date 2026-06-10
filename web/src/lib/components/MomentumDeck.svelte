@@ -5,14 +5,12 @@
   // peek defaults to the biggest mover.
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
-  import StockDeepView from '$lib/components/StockDeepView.svelte';
 
   // `chart` is an optional snippet rendered in the empty cols 4–6 of the deck row
   // (the space the 1×2 peek freed) — the dashboard passes the portfolio chart there.
-  let { cards = [], chart, belowDeck } = $props();
+  let { cards = [], chart, aboveDeck, belowDeck, belowDeck2, onOpenStock } = $props();
 
   let moveWin = $state('day');   // 'day' | 'wk'
-  let selected = $state(null);   // ticker; null = biggest mover
   let hovered = $state(null);    // index of card under cursor (geometry-driven, not :hover)
   let moves = $state({});        // live /api/momentum overlay
 
@@ -83,12 +81,12 @@
     hovered = Math.max(0, Math.min(Math.floor(x / fanStep), visibleMovers.length - 1));
   }
 
-  const peekH = $derived((selected && holdings.find((h) => h.t === selected)) || movers[movers.length - 1] || null);
-  const peek = $derived.by(() => {
-    const h = peekH;
+  // featured peek = today's biggest mover. Clicking any holding (card / ribbon / peek)
+  // opens its full detail; `enrich` adds the derived position fields the detail needs.
+  const peekH = $derived(movers[movers.length - 1] || null);
+  function enrich(h) {
     if (!h) return null;
-    // `basis` is the per-share weighted avg cost (API: total_invested = basis × shares),
-    // so total invested = basis × shares. Don't divide basis by shares again.
+    // `basis` is the per-share weighted avg cost (total invested = basis × shares).
     const invested = h.basis != null && h.shares ? h.basis * h.shares : null;
     return {
       ...h,
@@ -98,7 +96,9 @@
       dayMove: moveOf(h, 'day'),
       weekMove: moveOf(h, 'wk'),
     };
-  });
+  }
+  const peek = $derived(enrich(peekH));
+  function openStock(h) { const e = enrich(h); if (e) onOpenStock?.(e); }
 
   const f = (n) => (n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const pctS = (n) => ((n ?? 0) > 0 ? '+' : '') + (n ?? 0).toFixed(1) + '%';   // 0 → "0.0%"
@@ -113,22 +113,12 @@
     return () => clearInterval(t);
   });
 
-  // ── click the peek to expand it rightward into a (blank) deep panel. Content
-  // is stripped for now — we're tuning the expand/contract + shadow motion. ──
-  let expanded = $state(false);
-  let peekW = $state(0);     // measured 1-col width → the left spine matches it exactly
-
-  // The allocation ribbon drives the deep view: choosing a holding engages (expands the
-  // peek into) the deep view; clicking the already-selected one again unselects it and
-  // disengages back to the collapsed peek.
-  function pickFromRibbon(t) {
-    if (selected === t) { selected = null; expanded = false; }
-    else { selected = t; expanded = true; }
-  }
+  let peekW = $state(0);     // measured peek width → the spine matches it exactly
 </script>
 
-<div class="deck-peek" class:expanded>
+<div class="deck-peek">
   <div class="deck-col">
+    {#if aboveDeck}<div class="deck-kpis">{@render aboveDeck()}</div>{/if}
     <div class="felt">
     <div class="winbar" style="left: calc({toggleAnchor}px + var(--toggle-x))">
       <button class:on={moveWin === 'day'} onclick={() => (moveWin = 'day')}>1d</button>
@@ -137,9 +127,9 @@
     <div class="mfan" role="group" bind:clientWidth={fanW} onpointermove={onFanMove} onpointerleave={() => (hovered = null)}>
       {#each visibleMovers as h, i (h.t)}
         {@const mv = moveOf(h, moveWin)}
-        <button class="mcard suit-{h.suit}" class:selected={selected === h.t} class:hovered={hovered === i}
+        <button class="mcard suit-{h.suit}" class:hovered={hovered === i}
                 style="margin-left:{i === 0 ? 0 : fanStep - CARD_W}px; --sliver:{fanStep}px"
-                onclick={() => (selected = selected === h.t ? null : h.t)}>
+                onclick={() => openStock(h)}>
           <div class="mstrip {mv >= 0 ? 'up' : 'down'}">
             <span class="mstrip-fill" style="height:{Math.max(3, Math.abs(mv) / maxMove * 50).toFixed(1)}%"></span>
           </div>
@@ -167,55 +157,66 @@
         <span aria-hidden="true">reserved · 2×1</span>
       {/if}
     </div>
+
+    <!-- second row under cash/wraith: two 1×1 future-use widgets -->
+    <div class="deck-slot2">
+      {#if belowDeck2}
+        {@render belowDeck2()}
+      {:else}
+        <div class="deck-ph" aria-hidden="true">＋</div>
+        <div class="deck-ph" aria-hidden="true">＋</div>
+      {/if}
+    </div>
   </div>
 
   {#if peek}
     <aside class="peek" bind:clientWidth={peekW} style={peekW ? `--pw:${peekW}px` : ''}>
-      <!-- the ink shadow is its own layer so it can outpace the white body + bounce -->
+      <!-- the ink shadow is its own layer so it can outpace the white body on hover -->
       <div class="peek-shadow"></div>
-      <!-- click to expand; the ← / → button is the explicit toggle -->
-      <div class="peek-card glass-card" class:expanded>
+      <div class="peek-card glass-card">
 
-        <!-- LEFT spine = the mini peek; it's the full button (hover + click) that
-             toggles the deep view in BOTH collapsed and expanded modes -->
-        <div class="peek-left" role="button" tabindex="0" aria-expanded={expanded}
-             aria-label={expanded ? `${peek.t} — collapse deep view` : `Inspect ${peek.t} — expand`}
-             onclick={() => (expanded = !expanded)}
-             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expanded = !expanded; } }}>
-          <div class="peek-top">
-            <div class="peek-badge suit-{peek.suit}">{rankOf[peek.t]}<span class="badge-suit">{SUIT_SYMBOL[peek.suit]}</span></div>
-            <div class="peek-id">
-              <div class="peek-tkr">{peek.t}</div>
-              <div class="peek-name">{peek.name}</div>
+        <!-- the featured (biggest-mover) glance; the whole spine is the button that
+             opens the full stock detail -->
+        <div class="peek-left" role="button" tabindex="0"
+             aria-label={`Open ${peek.t} detail`}
+             onclick={() => onOpenStock?.(peek)}
+             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenStock?.(peek); } }}>
+          <!-- identity band: ticker + name + price + today's move -->
+          <div class="pk-top">
+            <div class="pk-head">
+              <div class="pk-id">
+                <div class="pk-tkr">{peek.t}</div>
+                <div class="pk-name">{peek.name}</div>
+              </div>
+              <span class="pk-go" aria-hidden="true">→</span>
             </div>
-            <span class="peek-go" aria-hidden="true">→</span>
+            <div class="pk-price">
+              <span class="pk-px">${f(peek.last)}</span>
+              <span class="pk-day {peek.dayMove >= 0 ? 'up' : 'down'}">{peek.dayMove >= 0 ? '▲' : '▼'} {pctS(peek.dayMove)}</span>
+            </div>
           </div>
 
-          <div class="peek-price">
-            <span class="peek-px">${f(peek.last)}</span>
-            <span class="peek-day {peek.dayMove >= 0 ? 'up' : 'down'}">{peek.dayMove >= 0 ? '▲' : '▼'} {pctS(peek.dayMove)}</span>
+          <!-- your-return hero: % over $ -->
+          <div class="pk-return">
+            <div class="pk-sub">your return</div>
+            {#if peek.retPct != null}
+              <div class="pk-hero {peek.retPct >= 0 ? 'up' : 'down'}">
+                <span class="pk-ret">{pctS(peek.retPct)}</span>
+                <span class="pk-ret-abs">{usd(peek.gain)}</span>
+              </div>
+            {:else}
+              <div class="pk-hero"><span class="pk-ret">—</span></div>
+            {/if}
           </div>
 
-          <div class="peek-sub">your return</div>
-          {#if peek.retPct != null}
-            <div class="peek-hero {peek.retPct >= 0 ? 'up' : 'down'}">
-              <span class="peek-ret">{pctS(peek.retPct)}</span>
-              <span class="peek-ret-abs">{usd(peek.gain)}</span>
-            </div>
-          {:else}
-            <div class="peek-hero"><span class="peek-ret">—</span></div>
-          {/if}
-
-          <div class="peek-rows">
-            <div class="pr"><span>value</span><b>${f(peek.value)}</b></div>
+          <!-- full position ledger (pinned to the bottom; fills the rail) -->
+          <div class="pk-pos">
+            <div class="pk-pos-h">position</div>
             <div class="pr"><span>shares</span><b>{f(peek.shares)}</b></div>
+            <div class="pr"><span>avg cost</span><b>${f(peek.avg)}</b></div>
+            <div class="pr"><span>value</span><b>${f(peek.value)}</b></div>
             <div class="pr"><span>weight</span><b>{peek.pct}%</b></div>
           </div>
-        </div>
-
-        <!-- DEEP panel — in-depth stock view (mounts on expand) -->
-        <div class="peek-deep">
-          {#if expanded}<StockDeepView holding={peek} />{/if}
         </div>
 
       </div>
@@ -228,14 +229,18 @@
 </div>
 
 <!-- allocation ribbon: the finder. width = weight, floored at ticker width. -->
-<div class="alloc-ribbon" role="group" aria-label="all holdings — click to inspect">
-  {#each byWeight as h (h.t)}
-    <button class="ribbon-seg" class:selected={selected === h.t} style="flex-grow:{h.pct}"
-            title="{h.name} · {h.pct}% of portfolio · ${f(h.value)}"
-            onclick={() => pickFromRibbon(h.t)}>
-      <span class="seg-tkr">{h.t}</span>
-    </button>
-  {/each}
+<div class="alloc-wrap">
+  <div class="alloc-cap"><b>Allocation</b><span>by weight · click to inspect</span></div>
+  <div class="alloc-ribbon" role="group" aria-label="all holdings — click to inspect">
+    {#each byWeight as h (h.t)}
+      <button class="ribbon-seg" style="flex-grow:{h.pct}"
+              title="{h.name} · {h.pct}% of portfolio · ${f(h.value)}"
+              onclick={() => openStock(h)}>
+        <span class="seg-tkr">{h.t}</span>
+        <span class="seg-pct">{h.pct}%</span>
+      </button>
+    {/each}
+  </div>
 </div>
 
 <style>
@@ -245,9 +250,12 @@
   /* one shared unit (--u, set on .content). rows are all --u tall; widgets span:
      deck = 2×2, slot = 2×1 (below deck), peek = 1×3, chart = 3×3. left column
      (deck 2 rows + gap + slot 1 row) = exactly the 3 rows peek/chart span. */
+  /* single auto row: the left column (deck-col) drives the height; the peek and
+     chart STRETCH to match it, so all three bottoms align however tall the packed
+     left column gets. No fixed row count to keep in sync. */
   .deck-peek { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
-    grid-auto-rows: var(--u); gap: 16px; align-items: stretch;
-    margin-top: 20px; /* nudge the whole deck region clear of the P&L strip above */ }
+    gap: 16px; align-items: stretch;
+    margin-top: 20px; /* clear the hero above */ }
   /* 1d / 1wk — black radio; tucked into the deck's top-right corner.
      temporarily hidden to free vertical room in the 2×1 slot — delete `display:none` to restore. */
   /* 1d/1wk — compact control floated in the deck's top-right corner (over the
@@ -276,10 +284,19 @@
      the tray (::after) fills that pad so the cards sit ON the felt (no float). */
   /* left column = one 2-unit stack (deck on top, the 2 small Cash/Goal widgets at the
      bottom) so its bottom matches the peek's 2-unit height exactly. */
-  .deck-col { grid-column: 1 / 3; grid-row: 1 / span 2; display: flex; flex-direction: column; gap: 16px; }
-  /* deck grows to fill the column above the widgets; cards sit low on the felt with
-     the green tray (::after) beneath them. */
-  .felt { --deck: #6f7a63; flex: 1; min-height: 0; position: relative; z-index: 1;
+  /* left column, top→bottom: 2 KPIs · deck · cash+wraith · 2 future widgets.
+     Every section is its natural height (no flex-grow), so nothing leaves empty
+     space — the column is exactly as tall as its packed contents. */
+  .deck-col { grid-column: 1 / 3; display: flex; flex-direction: column; gap: 16px; }
+  /* 2 headline KPIs (Portfolio Value · Total P&L) at the top of the left column.
+     The cards come from the page's aboveDeck snippet, so reach them with :global. */
+  .deck-kpis { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  :global(.deck-kpis .glass-card) { padding: 12px 14px; }
+  :global(.deck-kpis .kpi-label) { margin-bottom: 2px; }
+  :global(.deck-kpis .kpi-value) { font-size: 20px; }
+  :global(.deck-kpis .kpi-subtitle) { margin-top: 2px; }
+  /* felt is sized to the fan (no flex-grow) so the cards have no empty green above them */
+  .felt { --deck: #6f7a63; flex: 0 0 auto; min-height: 0; position: relative; z-index: 1;
     display: flex; flex-direction: column; justify-content: flex-end;
     border-radius: var(--r); padding: 16px 22px calc(var(--u) * 0.05) 14px; }
   /* Cash + Goal — 2 small widgets directly under the deck (their content height). */
@@ -288,6 +305,11 @@
   .deck-slot:not(.filled) { grid-template-columns: 1fr; place-items: center;
     border: var(--bw) dashed var(--muted); border-radius: var(--r);
     color: var(--muted); font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+  /* second slot: two 1×1 future-use widgets directly under cash + wraith */
+  .deck-slot2 { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .deck-ph { display: grid; place-items: center; min-height: var(--u);
+    border: var(--bw) dashed var(--muted); border-radius: var(--r);
+    color: var(--muted); font-family: var(--mono); font-size: 22px; font-weight: 700; }
   .felt::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--u) * 0.375);
     background: var(--deck); border: var(--bw) solid var(--ink); border-radius: var(--r);
     box-shadow: 0 4px 0 0 var(--ink); z-index: 0; }
@@ -309,7 +331,6 @@
   .mcard.hovered { z-index: 999; transform: translateY(-20px); box-shadow: var(--sh-pop); }
   /* clicked card lifts + ink ring; no sibling spread (the peek carries the detail,
      and spreading pushed cards out over the peek) */
-  .mcard.selected { z-index: 998; transform: translateY(-20px); box-shadow: var(--sh-pop); outline: 3px solid var(--brand); outline-offset: -3px; }
 
   /* width tracks the exposed sliver so the strip + its border sit flush with the
      next card's edge — no part of the strip is ever hidden underneath it */
@@ -339,12 +360,12 @@
   .mpct { position: absolute; top: 50%; left: 55%; transform: translate(-50%, -50%);
     font-family: var(--mono); font-weight: 700; font-size: 14px; letter-spacing: -.02em; white-space: nowrap; }
 
-  /* ── peek (1×2 inspector — investor-first: leads with your return) ── */
+  /* ── peek (1×3 inspector — investor-first: leads with your return) ── */
   /* z-index above the felt's stacking layer → a lifted card can never cover it */
-  .peek { grid-column: 3 / 4; grid-row: 1 / span 2; position: relative; z-index: 2; }
+  .peek { grid-column: 3 / 4; position: relative; z-index: 2; }
 
-  /* portfolio chart — fills the cols the 1×2 peek freed, same row & height as the peek */
-  .deck-chart { grid-column: 4 / 7; grid-row: 1 / span 2; }
+  /* portfolio chart — fills the cols the peek freed; stretches to the packed left column */
+  .deck-chart { grid-column: 4 / 7; }
   /* ── click-to-expand deep panel — animation focus ─────────────────────────
      The card grows 1→4 cols (400% + 3×16px gaps), sliding over the chart slot.
      The ink shadow is a SEPARATE layer so it can outpace the white body + bounce.
@@ -366,94 +387,75 @@
   /* hovering the left spine (the button) slides the shadow out — in BOTH modes */
   .peek:has(.peek-left:hover) .peek-shadow { transform: translate(12px, 7px); }
 
-  .deck-peek.expanded .peek { z-index: 60; }
-  .deck-peek.expanded .peek-card { width: calc(400% + 48px); cursor: default; }
-  .deck-peek.expanded .peek-shadow { width: calc(400% + 48px); transform: translate(4px, 4px);
-    animation: sh-expand .28s cubic-bezier(.65, 0, .35, 1); }
-
-  /* a small kick out, then eased back to the normal 4px size — gentle cubic in/out */
-  @keyframes sh-expand {
-    0%   { transform: translate(4px, 4px); }
-    55%  { transform: translate(7px, 6px); }
-    100% { transform: translate(4px, 4px); }
-  }
-
-  /* the portfolio chart fades + blurs out as the deep panel grows over its columns */
-  .deck-chart { transition: opacity .21s ease, filter .21s ease; }
-  .deck-peek.expanded .deck-chart { opacity: 0; filter: blur(2px); pointer-events: none; }
-
-  /* LEFT spine = the mini peek at exactly the collapsed card's inner width */
-  .peek-left { box-sizing: border-box; padding: 16px; display: flex; flex-direction: column; min-width: 0; cursor: pointer;
-    width: calc(var(--pw, 100%) - 2 * var(--bw)); flex: 0 0 calc(var(--pw, 100%) - 2 * var(--bw)); }
+  /* the position rail fills the whole peek card; space-between distributes its three
+     bands (identity · return · ledger) so it fills its full height — no dead block. */
+  .peek-left { box-sizing: border-box; padding: 18px 18px 16px; display: flex; flex-direction: column;
+    justify-content: space-between; gap: 18px; min-width: 0; width: 100%; flex: 1 1 auto; cursor: pointer; }
   .peek-left:focus-visible { outline: 2.5px solid var(--brand); outline-offset: -3px; border-radius: var(--r); }
-  .deck-peek.expanded .peek-left { border-right: var(--bw) solid var(--ink); }
-
-  /* DEEP panel — blank slate for now */
-  .peek-deep { flex: 1 1 auto; min-width: 0; }
 
   @media (prefers-reduced-motion: reduce) {
     .peek-card, .peek-shadow, .deck-chart { transition: none; }
-    .deck-peek.expanded .peek-shadow { animation: none; }
   }
-  .peek-top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-  /* the stock's live price — the prominent line, sitting above "your return" */
-  .peek-price { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
-  .peek-px { font-family: var(--mono); font-size: 25px; font-weight: 700; line-height: 1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
-  .peek-day { font-family: var(--mono); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .peek-badge { width: 40px; height: 40px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 16px; background: var(--suit, var(--brand)); border: var(--bw) solid var(--ink); border-radius: 8px; }
-  .badge-suit { font-size: 10px; -webkit-text-stroke: .75px var(--ink); paint-order: stroke fill; }
-  .peek-id { min-width: 0; flex: 1; }
-  .peek-tkr { font-size: 18px; font-weight: 700; }
-  .peek-name { font-family: var(--mono); font-size: 11px; color: var(--muted);
+  /* ── identity band: ticker/name + price, grouped at the top ── */
+  .pk-top { display: flex; flex-direction: column; gap: 13px; }
+  .pk-head { display: flex; align-items: flex-start; gap: 10px; }
+  .pk-id { min-width: 0; flex: 1; }
+  .pk-tkr { font-size: 20px; font-weight: 700; letter-spacing: -.01em; line-height: 1; }
+  .pk-name { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 4px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .peek-go { flex: 0 0 auto; font-family: var(--sans); font-size: 20px; font-weight: 700; line-height: 1; color: var(--muted);
+  .pk-go { flex: 0 0 auto; font-family: var(--sans); font-size: 20px; font-weight: 700; line-height: 1; color: var(--muted);
     transition: color .1s ease, transform .24s cubic-bezier(.5, 0, .3, 1.12); }
   /* the whole left spine is the button — emphasise the arrow while it's hovered */
-  .peek:has(.peek-left:hover) .peek-go { color: var(--ink); }
-  .deck-peek:not(.expanded) .peek:has(.peek-left:hover) .peek-go { transform: translateX(3px); }
-  /* expanded: arrow points back (←); it flips in with the same gentle bounce as expand */
-  .deck-peek.expanded .peek-go { transform: rotate(180deg); color: var(--ink);
-    animation: ar-flip .28s cubic-bezier(.65, 0, .35, 1); }
-  @keyframes ar-flip {
-    0%   { transform: rotate(0deg); }
-    55%  { transform: rotate(192deg); }
-    100% { transform: rotate(180deg); }
-  }
-  .peek-sub { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; color: var(--ink);
-    opacity: .55; margin-bottom: 3px; }
-  /* stacked (% over $) so the hero is always two lines → peek height never shifts */
-  .peek-hero { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 16px; }
-  .peek-ret { font-family: var(--mono); font-size: 28px; font-weight: 700; line-height: 1; }
-  .peek-ret-abs { font-family: var(--mono); font-size: 14px; font-weight: 700; opacity: .8; }
-  .peek-rows { display: flex; flex-direction: column; gap: 7px; }
-  .pr { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px; }
-  .pr span { color: var(--muted); }
-  .pr b { font-family: var(--mono); font-weight: 700; font-size: 13px; }
+  .peek:has(.peek-left:hover) .pk-go { color: var(--ink); }
+  .peek:has(.peek-left:hover) .pk-go { transform: translateX(3px); }
+  .pk-price { display: flex; align-items: baseline; gap: 8px; }
+  .pk-px { font-family: var(--mono); font-size: 26px; font-weight: 700; line-height: 1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .pk-day { font-family: var(--mono); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* ── your-return hero: the emotional headline, centre band ── */
+  .pk-return { display: flex; flex-direction: column; }
+  .pk-sub { font-size: 10px; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; color: var(--ink);
+    opacity: .5; margin-bottom: 6px; }
+  /* stacked (% over $) so the hero is always two lines → height never shifts */
+  .pk-hero { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+  .pk-ret { font-family: var(--mono); font-size: 30px; font-weight: 700; line-height: .95; letter-spacing: -.02em;
+    white-space: nowrap; }
+  .pk-ret-abs { font-family: var(--mono); font-size: 14px; font-weight: 700; opacity: .8; }
+
+  /* ── position ledger: the cold facts, pinned to the bottom band ── */
+  .pk-pos { display: flex; flex-direction: column; gap: 8px; padding-top: 13px;
+    border-top: 1.5px solid color-mix(in srgb, var(--ink) 14%, transparent); }
+  .pk-pos-h { font-family: var(--sans); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em;
+    color: var(--ink); opacity: .5; margin-bottom: 1px; }
+  .pr { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .pr span { font-family: var(--sans); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  .pr b { font-family: var(--mono); font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
 
   .up { color: var(--gain); }
   .down { color: var(--loss); }
 
   /* ── allocation ribbon — every holding, width = weight, floored at ticker width ── */
-  .alloc-ribbon { display: flex; align-items: stretch; height: 42px; width: 100%; overflow: hidden;
+  .alloc-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+  .alloc-cap { display: flex; align-items: baseline; gap: 10px; }
+  .alloc-cap b { font-size: 16px; font-weight: 700; }
+  .alloc-cap span { font-size: 12px; color: var(--muted); }
+  .alloc-ribbon { display: flex; align-items: stretch; height: 76px; width: 100%; overflow: hidden;
     background: var(--surface); border: var(--bw) solid var(--ink); border-radius: var(--r); box-shadow: var(--sh); }
-  .ribbon-seg { flex: 0 1 0; min-width: max-content; display: flex; align-items: center; justify-content: center;
+  .ribbon-seg { flex: 0 1 0; min-width: max-content; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     padding: 0 11px; border: 0; border-right: 2px solid var(--ink); background: var(--surface); color: var(--ink);
     cursor: pointer; font: inherit; transition: background .12s ease; }
   .ribbon-seg:last-child { border-right: 0; }
-  .ribbon-seg:hover { background: var(--paper); }
-  .ribbon-seg.selected { background: var(--brand); }
-  .seg-tkr { font-family: var(--mono); font-weight: 700; font-size: 12px; letter-spacing: -.02em; white-space: nowrap; }
+  .ribbon-seg:hover { background: var(--brand); }
+  .seg-tkr { font-family: var(--mono); font-weight: 700; font-size: 13px; letter-spacing: -.02em; white-space: nowrap; }
+  .seg-pct { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--muted); white-space: nowrap; }
 
   @media (max-width: 1100px) {
-    .deck-peek { grid-template-columns: 1fr; grid-auto-rows: auto; }
-    .felt, .deck-slot, .peek, .deck-chart { grid-column: 1; grid-row: auto; }
+    .deck-peek { grid-template-columns: 1fr; }
+    .deck-col, .peek, .deck-chart { grid-column: 1; grid-row: auto; }
     .deck-chart { min-height: 320px; }
     /* stacked column: no sideways room — keep the mini peek, drop the shadow layer */
     .peek-shadow { display: none; }
     .peek-card { position: relative; width: 100% !important; height: auto; box-shadow: var(--sh); }
     .deck-peek .peek-left { width: 100%; flex: 1 1 auto; border-right: 0 !important; }
-    .peek-deep { display: none; }
-    .deck-peek.expanded .deck-chart { opacity: 1; filter: none; pointer-events: auto; }
   }
 </style>

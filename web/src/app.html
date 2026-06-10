@@ -18,11 +18,9 @@
       rel="stylesheet"
     />
 
-    <!-- Three.js r128 + VOXLoader as GLOBAL scripts (NOT npm imports): garden.js
-         relies on a global THREE r128 (no OrbitControls / CapsuleGeometry). They
-         must load before any component onMount calls window.initGarden. -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/VOXLoader.js"></script>
+    <!-- three.js + addons (VOXLoader, TransformControls) and lil-gui are now npm
+         deps imported as ES modules from src/lib/three/garden/ — no global CDN
+         scripts. See the garden module for the modern-three setup. -->
 
     %sveltekit.head%
   </head>

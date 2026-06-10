@@ -20,6 +20,8 @@
     "vite": "^6.0.0"
   },
   "dependencies": {
-    "lightweight-charts": "^5.2.0"
+    "lightweight-charts": "^5.2.0",
+    "lil-gui": "^0.21.0",
+    "three": "^0.184.0"
   }
 }

@@ -65,6 +65,14 @@ CREATE TABLE IF NOT EXISTS cash_reconciliation (
     note          TEXT
 );
 
+-- Non-held tickers the user wants on the radar (the "+ Watch" button).
+CREATE TABLE IF NOT EXISTS watchlist (
+    user_id  INTEGER NOT NULL REFERENCES users(user_id),
+    ticker   TEXT    NOT NULL,
+    added_at TEXT    NOT NULL,
+    PRIMARY KEY (user_id, ticker)
+);
+
 -- Shared market-data cache freshness (the Parquet files hold the data itself).
 CREATE TABLE IF NOT EXISTS price_cache_meta (
     ticker       TEXT NOT NULL,
@@ -88,7 +96,11 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     """
     path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+    # check_same_thread=False: FastAPI runs sync endpoints on a threadpool, and
+    # store.py keeps one long-lived metadata connection that any request thread
+    # may touch (e.g. caching a brand-new ticker's profile). CPython's sqlite3
+    # is built threadsafe (sqlite3.threadsafety == 3), which serializes access.
+    conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
@@ -158,6 +170,31 @@ def reconciliation_offset(conn: sqlite3.Connection, user_id: int = DEFAULT_USER_
     )
     row = cur.fetchone()
     return float(row["offset_usd"]) if row is not None else 0.0
+
+
+# ── watchlist ────────────────────────────────────────────────────────────────
+
+
+def watchlist_tickers(conn: sqlite3.Connection, user_id: int = DEFAULT_USER_ID) -> list[str]:
+    cur = conn.execute(
+        "SELECT ticker FROM watchlist WHERE user_id = ? ORDER BY added_at", (user_id,)
+    )
+    return [r["ticker"] for r in cur.fetchall()]
+
+
+def watchlist_add(conn: sqlite3.Connection, ticker: str, user_id: int = DEFAULT_USER_ID) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO watchlist (user_id, ticker, added_at) VALUES (?, ?, ?)",
+        (user_id, ticker, _now()),
+    )
+    conn.commit()
+
+
+def watchlist_remove(conn: sqlite3.Connection, ticker: str, user_id: int = DEFAULT_USER_ID) -> None:
+    conn.execute(
+        "DELETE FROM watchlist WHERE user_id = ? AND ticker = ?", (user_id, ticker)
+    )
+    conn.commit()
 
 
 # ── price-cache metadata (used by store.py) ─────────────────────────────────

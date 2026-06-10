@@ -62,40 +62,35 @@
 <div class="glass-card cashgoal-card" class:open role="button" tabindex="0" aria-expanded={open}
   onclick={toggle}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}>
-  <!-- Designed coin token (flat, app-style): an ink-outlined gold face sitting on a darker-
-       gold bottom edge that gives it thickness, with a darker-gold inner rim ring. On card
-       hover a diagonal light streak (the same sweep as .portfolio-card's shine) crosses the
-       face, clipped to the ellipse. overflow:visible (see .cg-coin) lets the edge spill past
-       the viewBox bottom. -->
-  <svg class="cg-coin" viewBox="0 0 231 183" width="36" height="29" aria-hidden="true">
+  <!-- Coin token, heads-on (flat, app-style): a perfect-circle gold face with an ink
+       outline, sitting on a darker-gold bottom edge for thickness. Inner rim ring,
+       a bold ink "$" struck in the centre, one specular glint top-left. On card hover
+       a diagonal light streak sweeps the face, clipped to the circle. -->
+  <svg class="cg-coin" viewBox="0 0 120 132" width="32" height="35" aria-hidden="true">
     <defs>
-      <clipPath id="cg-face-clip">
-        <ellipse cx="115.347" cy="91.167" rx="122" ry="82" transform="rotate(26.1617 115.347 91.167)" />
-      </clipPath>
+      <clipPath id="cg-face-clip"><circle cx="60" cy="60" r="52" /></clipPath>
       <linearGradient id="cg-shine-grad" x1="0" y1="0" x2="1" y2="0" gradientTransform="rotate(25 0.5 0.5)">
         <stop offset="0.40" stop-color="#fff" stop-opacity="0" />
         <stop offset="0.50" stop-color="#fff" stop-opacity="0.55" />
         <stop offset="0.60" stop-color="#fff" stop-opacity="0" />
       </linearGradient>
     </defs>
-    <!-- coin thickness: darker-gold bottom edge, offset straight down, ink-outlined -->
-    <ellipse cx="115.347" cy="91.167" rx="122" ry="82" transform="translate(0 12) rotate(26.1617 115.347 91.167)"
-             fill="#b07d14" stroke="#1a1a1a" stroke-width="11" stroke-linejoin="round" />
-    <!-- gold coin face, ink-outlined -->
-    <ellipse cx="115.347" cy="91.167" rx="122" ry="82" transform="rotate(26.1617 115.347 91.167)"
-             fill="#FFC900FF" stroke="#1a1a1a" stroke-width="11" stroke-linejoin="round" />
-    <!-- inner rim ring on the face -->
-    <ellipse cx="115.347" cy="91.167" rx="95" ry="63" transform="rotate(26.1617 115.347 91.167)"
-             fill="none" stroke="#D78604FF" stroke-width="8" />
-    <!-- stark specular glint: two parallel thin streaks (rounded rectangles), the upper one
-         shorter, upper-left of the face and tilted along the coin's axis (light catch) -->
-    <g transform="translate(0 9) rotate(26.1617 115.347 91.167)" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round">
-      <path d="M52 78 L86 56" />
-      <path d="M50 62 L72 48" />
+    <!-- thickness: darker-gold edge, offset straight down, ink-outlined -->
+    <circle cx="60" cy="70" r="52" fill="#b07d14" stroke="#1a1a1a" stroke-width="6" />
+    <!-- gold face -->
+    <circle cx="60" cy="60" r="52" fill="#FFC900" stroke="#1a1a1a" stroke-width="6" />
+    <!-- inner rim ring -->
+    <circle cx="60" cy="60" r="40" fill="none" stroke="#D78604" stroke-width="5" />
+    <!-- struck "$" -->
+    <text x="60" y="62" text-anchor="middle" dominant-baseline="central"
+          font-family="ui-monospace, monospace" font-size="46" font-weight="700" fill="#1a1a1a">$</text>
+    <!-- specular glint, top-left of the face -->
+    <g fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round">
+      <path d="M30 38 Q38 28 50 24" />
     </g>
     <!-- shine streak, clipped to the face; swept across by .cg-coin-shine on card hover -->
     <g clip-path="url(#cg-face-clip)">
-      <rect class="cg-coin-shine" x="-40" y="-40" width="311" height="263" fill="url(#cg-shine-grad)" />
+      <rect class="cg-coin-shine" x="-20" y="-20" width="160" height="160" fill="url(#cg-shine-grad)" />
     </g>
   </svg>
 
