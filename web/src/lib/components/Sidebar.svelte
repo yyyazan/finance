@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { holdings, moves, loadHoldings, startMomentum, openStock, openSearch, cardToHolding } from '$lib/stores.js';
+  import { holdings, moves, loadHoldings, startMomentum, openStock, openSearch, cardToHolding, watchlist, loadWatchlist } from '$lib/stores.js';
 
   const NAV = [
     { label: 'home', path: '/', glyph: '❖' },
@@ -16,7 +16,7 @@
     e.currentTarget.style.setProperty('--hovsh', ACCENTS[Math.floor(Math.random() * ACCENTS.length)]);
   }
 
-  onMount(() => { loadHoldings(); startMomentum(); });
+  onMount(() => { loadHoldings(); startMomentum(); loadWatchlist(); });
 
   let win = $state('day');   // 'day' | 'wk' — which move window the strips encode
 
@@ -32,9 +32,6 @@
     const v = live ? (w === 'day' ? live.day_pct : live.week_pct) : (w === 'day' ? c.day_pct : c.week_pct);
     return v ?? 0;
   };
-  // biggest |move| in the window → its strip is full-height, the rest proportional
-  const maxMove = $derived(Math.max(1, ...rows.map((c) => Math.abs(moveOf(c, win)))));
-
   const pct = (n) => (n >= 0 ? '+' : '−') + Math.abs(n ?? 0).toFixed(2) + '%';
   const wt = (n) => (n ?? 0).toFixed(1) + '%';
   const usd = (n) => {
@@ -87,9 +84,6 @@
       {#each rows as c, i (c.ticker)}
         {@const mv = moveOf(c, win)}
         <button class="row" style="--i:{Math.min(i, 16)}" onclick={() => open(c)}>
-          <span class="strip {mv >= 0 ? 'up' : 'down'}">
-            <span class="strip-fill" style="height:{Math.max(5, Math.abs(mv) / maxMove * 100).toFixed(0)}%"></span>
-          </span>
           <span class="r-main">
             <span class="r-line">
               <b class="r-sym">{c.ticker}</b>
@@ -98,6 +92,23 @@
             <span class="r-line r-sub">
               <span class="r-val">{usd(c.market_value)}</span>
               <span class="r-wt">{wt(c.position_pct)}</span>
+            </span>
+          </span>
+        </button>
+      {/each}
+    {/if}
+
+    {#if $watchlist?.length}
+      <div class="wl-head">Watchlist</div>
+      {#each $watchlist as w (w.ticker)}
+        <button class="row wl-row" onclick={() => openStock({ ticker: w.ticker, name: w.name, holding: null })}>
+          <span class="r-main">
+            <span class="r-line">
+              <b class="r-sym">{w.ticker}</b>
+              <span class="r-day {(w.dayPct ?? 0) >= 0 ? 'up' : 'down'}">{w.dayPct != null ? pct(w.dayPct) : '—'}</span>
+            </span>
+            <span class="r-line r-sub">
+              <span class="r-val">{w.price != null ? '$' + w.price.toFixed(2) : '—'}</span>
             </span>
           </span>
         </button>
@@ -130,6 +141,12 @@
   .rail { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; }
   .rail-empty { padding: 10px 6px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 
+  /* ── watched (non-held) tickers: same rows, no growth strip ── */
+  .wl-head { margin: 14px 4px 5px; padding-top: 10px; font-family: var(--sans); font-size: 9.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .12em; color: var(--muted);
+    border-top: 1.5px solid color-mix(in srgb, var(--ink) 13%, transparent); }
+  .wl-row { animation: none; }
+
   /* ── a holding row: growth strip · two stat lines ── */
   .row { display: flex; align-items: stretch; gap: 10px; padding: 9px 8px; border: 0; border-radius: var(--r);
     background: transparent; cursor: pointer; text-align: left; font: inherit; position: relative; overflow: hidden;
@@ -142,17 +159,6 @@
     transform: translateX(-130%); transition: transform .6s ease; }
   .row:hover::after { transform: translateX(130%); }
 
-  /* the mover strip — framed like a deck card column: cream track, solid
-     flat-topped fill rising from the bottom = magnitude. Own column, never text. */
-  .strip { flex: 0 0 13px; box-sizing: border-box; align-self: stretch; min-height: 38px; position: relative;
-    border: 1.5px solid var(--ink); border-radius: 3px; background: var(--paper); overflow: hidden; }
-  .strip-fill { position: absolute; left: 0; right: 0; bottom: 0;
-    transform-origin: bottom; transition: height .5s cubic-bezier(.4, 0, .2, 1);
-    animation: grow .55s cubic-bezier(.2, .8, .3, 1) backwards; animation-delay: calc(var(--i) * 26ms + 90ms); }
-  .strip.up .strip-fill { background: var(--gain); }
-  .strip.down .strip-fill { background: var(--loss); }
-  .row:hover .strip-fill { filter: brightness(1.06) saturate(1.08); }
-
   .r-main { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
   .r-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .r-sym { font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--ink); }
@@ -164,9 +170,8 @@
   .down { color: var(--loss); }
 
   @keyframes rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
-  @keyframes grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
   @media (prefers-reduced-motion: reduce) {
-    .row, .strip-fill { animation: none; }
+    .row { animation: none; }
     .row::after { transition: none; }
   }
 

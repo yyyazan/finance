@@ -43,6 +43,27 @@ export function primeHoldings(cards) {
   holdings.set((cards ?? []).filter((c) => !c.is_joker));
 }
 
+// Watched (non-held) tickers: [{ ticker, name, price, dayPct }] | null = not loaded.
+// Shared so the sidebar rail and the stock view's watch toggle stay in sync.
+export const watchlist = writable(null);
+let wlInflight = null;
+export function loadWatchlist(force = false) {
+  if (get(watchlist) && !force) return Promise.resolve();
+  if (wlInflight) return wlInflight;
+  wlInflight = api
+    .watchlist()
+    .then((w) => watchlist.set(w ?? []))
+    .catch(() => {})
+    .finally(() => { wlInflight = null; });
+  return wlInflight;
+}
+
+export async function toggleWatch(ticker, on) {
+  const r = await (on ? api.watch(ticker) : api.unwatch(ticker));
+  if (r?.watchlist) watchlist.set(r.watchlist);
+  return r?.ok ?? false;
+}
+
 export function openStock(payload) { detail.set(payload); }
 export function closeStock() { detail.set(null); }
 export function openSearch() { searchOpen.set(true); }

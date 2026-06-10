@@ -8,6 +8,12 @@ async function get(path) {
   return r.json();
 }
 
+async function del(path) {
+  const r = await fetch(`/api${path}`, { method: 'DELETE' });
+  if (!r.ok) throw new Error(`DELETE ${path} → ${r.status}`);
+  return r.json();
+}
+
 async function post(path, body) {
   const r = await fetch(`/api${path}`, {
     method: 'POST',
@@ -22,6 +28,11 @@ export const api = {
   dashboard: () => get('/dashboard'),
   momentum: () => get('/momentum'),
   stock: (t) => get('/stock/' + encodeURIComponent(t)),
+  intraday: (t, range) => get('/stock/' + encodeURIComponent(t) + '/intraday?range=' + encodeURIComponent(range)),
+  market: () => get('/market'),
+  watchlist: () => get('/watchlist'),
+  watch: (t) => post('/watchlist', { ticker: t }),
+  unwatch: (t) => del('/watchlist/' + encodeURIComponent(t)),
   search: (q) => get('/search?q=' + encodeURIComponent(q)),
   investments: () => get('/investments'),
   garden: () => get('/garden'),

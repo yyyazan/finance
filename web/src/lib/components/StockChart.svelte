@@ -6,11 +6,25 @@
   import { onMount } from 'svelte';
   import { createChart, AreaSeries, CandlestickSeries, ColorType, CrosshairMode, LineStyle } from 'lightweight-charts';
   import { priceSeries, RANGES } from '$lib/mockStock.js';
+  import { api } from '$lib/api.js';
 
   let { ticker = '—', history = null, price = 100 } = $props();
 
-  let range = $state('3M');
+  let range = $state('1D');
   let chartType = $state('area');   // 'area' | 'candles'
+
+  // Real intraday bars for 1D/1W (5m/30m from /api/stock/{t}/intraday). Daily
+  // ranges keep slicing `history`. Mock fallback covers fetch failures.
+  let intra = $state(null);
+  $effect(() => {
+    const t = ticker, rg = range;
+    if (!t || t === '—' || (rg !== '1D' && rg !== '1W')) { intra = null; return; }
+    let cancelled = false;
+    api.intraday(t, rg.toLowerCase())
+      .then((r) => { if (!cancelled && r?.points?.length > 1) intra = { ...r, forRange: rg }; })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  });
 
   const RANGE_DAYS = { '1D': 3, '1W': 9, '1M': 33, '3M': 95, '1Y': 370, '5Y': 1850 };
   function isoMinusDays(iso, days) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - days); return d.toISOString().slice(0, 10); }
@@ -24,6 +38,15 @@
     return { area, candles };
   }
   const data = $derived.by(() => {
+    if ((range === '1D' || range === '1W') && intra?.forRange === range && intra.ticker === (ticker || '').toUpperCase()) {
+      const pts = intra.points.filter((p) => p.c != null);
+      const area = pts.map((p) => ({ time: p.t, value: p.c }));
+      const candles = pts.map((p, i) => {
+        const o = i ? pts[i - 1].c : (intra.prevClose ?? p.c);
+        return { time: p.t, open: o, high: Math.max(o, p.c), low: Math.min(o, p.c), close: p.c };
+      });
+      return { area, candles, prevClose: range === '1D' ? intra.prevClose : null };
+    }
     const real = history?.length ? realSeries(history, range) : null;
     return real ?? priceSeries(ticker, range, price ?? 100);
   });
@@ -34,8 +57,13 @@
   function fmtDate(t) {
     if (t == null) return '';
     let d;
-    if (typeof t === 'number') d = new Date(t * 1000);
-    else if (typeof t === 'string') d = new Date(t + 'T00:00:00');
+    if (typeof t === 'number') {
+      d = new Date(t * 1000);
+      return isNaN(d)
+        ? ''
+        : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }
+    if (typeof t === 'string') d = new Date(t + 'T00:00:00');
     else if (typeof t === 'object' && t.year) d = new Date(t.year, (t.month || 1) - 1, t.day || 1);
     else return '';
     return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -100,6 +128,13 @@
         priceLineVisible: false, lastValueVisible: false,
       });
       series.setData(d.area);
+    }
+    // 1D: dotted previous-close reference, the "am I up today?" line
+    if (d.prevClose != null) {
+      series.createPriceLine({
+        price: d.prevClose, color: MUTED, lineWidth: 1, lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true, title: 'prev',
+      });
     }
     chart.timeScale().fitContent();
   });

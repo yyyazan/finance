@@ -4,10 +4,11 @@
   import KpiCard from '$lib/components/KpiCard.svelte';
   import CashGoalCard from '$lib/components/CashGoalCard.svelte';
   import DividendWraith from '$lib/components/DividendWraith.svelte';
-  import MomentumDeck from '$lib/components/MomentumDeck.svelte';
-  import PortfolioChart from '$lib/components/PortfolioChart.svelte';
+  import AllocationRing from '$lib/components/AllocationRing.svelte';
+  import DashboardStage from '$lib/components/DashboardStage.svelte';
+  import MarketPulse from '$lib/components/MarketPulse.svelte';
   import GardenView from '$lib/components/GardenView.svelte';
-  import { primeHoldings, openStock } from '$lib/stores.js';
+  import { primeHoldings } from '$lib/stores.js';
 
   let d = $state(null);
   let garden = $state(null);
@@ -21,9 +22,6 @@
       error = String(e);
     }
   });
-
-  // From the deck: the enriched holding object already carries the position fields.
-  function openHolding(h) { openStock({ ticker: h.t, name: h.name, holding: h }); }
 
   // Re-pull the dashboard after a transaction is saved from the cash tile, so cash updates.
   async function refresh() {
@@ -47,25 +45,48 @@
       </div>
     </div>
 
-    <MomentumDeck cards={d.cards} onOpenStock={openHolding}>
-      {#snippet aboveDeck()}
-        <KpiCard label="Portfolio Value" value={d.kpis.portfolio_value} kind="money" size="mini" subtitle="stocks + cash" />
-        <KpiCard label="Total P&L" value={d.kpis.total_pnl} kind="money_compact" size="mini" subtitle="unrealized + realized"
-          tone={d.kpis.total_pnl >= 0 ? 'gain' : 'loss'} />
-      {/snippet}
-      {#snippet chart()}
-        <PortfolioChart equity={d.equity_curve} spy={d.spy_curve} twr={d.twr} />
-      {/snippet}
-      {#snippet belowDeck()}
+    <!-- stage (big, leftmost) · widget rail (right) -->
+    <div class="dash">
+      <DashboardStage equity={d.equity_curve} spy={d.spy_curve} twr={d.twr} />
+
+      <aside class="dash-rail">
+        <div class="rail-duo">
+          <KpiCard label="Portfolio Value" value={d.kpis.portfolio_value} kind="money" size="mini" subtitle="stocks + cash" />
+          <KpiCard label="Total P&L" value={d.kpis.total_pnl} kind="money_compact" size="mini" subtitle="unrealized + realized"
+            tone={d.kpis.total_pnl >= 0 ? 'gain' : 'loss'} />
+        </div>
         <CashGoalCard cash={d.kpis.cash} portfolioValue={d.kpis.portfolio_value}
           goalLabel="monthly goal" goalCurrent={d.goal.current} goalTarget={d.goal.target}
           onSaved={refresh} />
-        <DividendWraith data={d.dividends} holdings={d.cards} />
-      {/snippet}
-    </MomentumDeck>
+        <div class="rail-duo rail-bare">
+          <DividendWraith data={d.dividends} holdings={d.cards} />
+          <AllocationRing holdings={d.cards.filter((c) => !c.is_joker)} />
+        </div>
+        <MarketPulse />
+      </aside>
+    </div>
   </div>
 {:else}
   <div class="content"><p style="color:var(--muted)">Loading…</p></div>
 {/if}
 
+<style>
+  /* main stage gets the lion's share; the rail is a fixed comfortable column */
+  /* main stage : rail = 3 : 1 */
+  .dash { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+  .dash > :global(.stage) { min-height: 520px; }
 
+  .dash-rail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .rail-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .rail-duo > :global(.glass-card) { padding: 12px 14px; }
+  /* dividends + allocation: intentionally chrome-less, side by side */
+  .rail-bare { align-items: center; }
+
+  @media (max-width: 1100px) {
+    .dash { grid-template-columns: 1fr; }
+    .dash > :global(.stage) { min-height: 480px; }
+  }
+  @media (max-width: 700px) {
+    .rail-duo { gap: 12px; }
+  }
+</style>
