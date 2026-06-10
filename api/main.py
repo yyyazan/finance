@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 
 from api import backup, state
 from api.config import CORS_ORIGINS
-from api.routers import dashboard, entries, stock
+from api.routers import dashboard, entries, search, stock
 
 # Static SvelteKit bundle (adapter-static). Served by this same process so the
 # whole app is one deploy; missing in dev when the frontend runs on Vite :5173.
@@ -59,6 +59,7 @@ app.add_middleware(
 
 app.include_router(dashboard.router)
 app.include_router(entries.router)
+app.include_router(search.router)
 app.include_router(stock.router)
 
 

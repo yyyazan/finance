@@ -7,6 +7,7 @@
   import MomentumDeck from '$lib/components/MomentumDeck.svelte';
   import PortfolioChart from '$lib/components/PortfolioChart.svelte';
   import GardenView from '$lib/components/GardenView.svelte';
+  import { primeHoldings, openStock } from '$lib/stores.js';
 
   let d = $state(null);
   let garden = $state(null);
@@ -15,15 +16,20 @@
   onMount(async () => {
     try {
       [d, garden] = await Promise.all([api.dashboard(), api.garden()]);
+      primeHoldings(d.cards);          // share holdings with the sidebar rail
     } catch (e) {
       error = String(e);
     }
   });
 
+  // From the deck: the enriched holding object already carries the position fields.
+  function openHolding(h) { openStock({ ticker: h.t, name: h.name, holding: h }); }
+
   // Re-pull the dashboard after a transaction is saved from the cash tile, so cash updates.
   async function refresh() {
     try {
       d = await api.dashboard();
+      primeHoldings(d.cards);
     } catch (e) {
       error = String(e);
     }
@@ -41,13 +47,12 @@
       </div>
     </div>
 
-    <div class="pnl-strip">
-      {#each Array.from({ length: 6 }) as _, i (i)}
-        <KpiCard label="Total P&L" value={d.kpis.total_pnl} kind="money_compact" size="mini" subtitle="unrealized + realized" tone="gain" />
-      {/each}
-    </div>
-
-    <MomentumDeck cards={d.cards}>
+    <MomentumDeck cards={d.cards} onOpenStock={openHolding}>
+      {#snippet aboveDeck()}
+        <KpiCard label="Portfolio Value" value={d.kpis.portfolio_value} kind="money" size="mini" subtitle="stocks + cash" />
+        <KpiCard label="Total P&L" value={d.kpis.total_pnl} kind="money_compact" size="mini" subtitle="unrealized + realized"
+          tone={d.kpis.total_pnl >= 0 ? 'gain' : 'loss'} />
+      {/snippet}
       {#snippet chart()}
         <PortfolioChart equity={d.equity_curve} spy={d.spy_curve} twr={d.twr} />
       {/snippet}
@@ -62,3 +67,5 @@
 {:else}
   <div class="content"><p style="color:var(--muted)">Loading…</p></div>
 {/if}
+
+

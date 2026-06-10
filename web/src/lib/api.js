@@ -22,6 +22,7 @@ export const api = {
   dashboard: () => get('/dashboard'),
   momentum: () => get('/momentum'),
   stock: (t) => get('/stock/' + encodeURIComponent(t)),
+  search: (q) => get('/search?q=' + encodeURIComponent(q)),
   investments: () => get('/investments'),
   garden: () => get('/garden'),
   trades: () => get('/trades'),

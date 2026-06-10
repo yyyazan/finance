@@ -69,10 +69,9 @@ html, body {
 a { color: inherit; text-decoration: none; }
 
 /* ── App shell ──────────────────────────────────────────────────────────── */
-.app-root { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
-/* Sidebar temporarily hidden — collapse its column so content spans full width. */
-.app-root--nosidebar { grid-template-columns: minmax(0, 1fr); }
-.sidebar { background: var(--surface); border-right: var(--bw) solid var(--ink); display: flex; flex-direction: column; padding: 16px 12px; gap: 6px; }
+.app-root { display: grid; grid-template-columns: 244px minmax(0, 1fr); min-height: 100vh; }
+.sidebar { background: var(--surface); border-right: var(--bw) solid var(--ink); display: flex; flex-direction: column; padding: 16px 12px; gap: 6px;
+  position: sticky; top: 0; align-self: start; height: 100vh; box-sizing: border-box; overflow: hidden; }
 .brand { padding: 6px 10px 18px; }
 .brand-title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .nav { display: flex; flex-direction: column; gap: 6px; }
@@ -209,12 +208,15 @@ table.data-table tbody tr:hover { background: #fffdf3; }
 
 /* ── Garden hero band + greeting (garden three.js reskin handled separately) ── */
 .page-hero {
-  width: 100vw;
-  margin-left: calc(50% - 50vw);
+  /* break out of .content's 28px side padding so the band spans the full main
+     column — NOT the viewport (100vw breaks now that the sidebar offsets us). */
+  margin: 0 -28px;
 }
 .garden-band { width: 100%; margin: 0; }
 /* Slim band (was a 380px hero) so the bento numbers reach into the first screen. */
 .garden-canvas-root { width: 100%; height: clamp(180px, 23vw, 230px); position: relative; }
+/* Debug page (/garden): fill the full-viewport wrapper instead of the slim band. */
+.garden-canvas-root--fill { height: 100%; }
 .page-header-overlay { position: absolute; top: 0; left: 0; right: 0; padding: 20px 28px 0; z-index: 2; pointer-events: none; }
 .garden-canvas { display: block; width: 100% !important; height: 100% !important; }
 .greeting-title {
@@ -278,7 +280,7 @@ table.data-table tbody tr:hover { background: #fffdf3; }
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 700px) {
   .app-root { grid-template-columns: minmax(0, 1fr); }
-  .sidebar { border-right: 0; border-bottom: var(--bw) solid var(--ink); }
+  .sidebar { border-right: 0; border-bottom: var(--bw) solid var(--ink); position: static; height: auto; overflow: visible; }
   .nav { flex-direction: row; overflow-x: auto; }
   .nav-label { display: none; }
   .content { padding: 16px; }
