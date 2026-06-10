@@ -15,31 +15,43 @@
 
 import { createContext, disposeContext } from "./context.js";
 import createLights from "./lighting.js";
+import createSky from "./layers/sky.js";
 import createGround from "./layers/ground.js";
 import createPlants from "./layers/plants.js";
 import createInteraction from "./layers/interaction.js";
+import createInspect from "./layers/inspect.js";
+import createDebug from "./layers/debug.js";
 import createEditor, { editorEnabled } from "./layers/editor.js";
 
 // One live garden at a time. If initGarden runs again before the previous mount
 // tore down (defensive against double-mounts / fast navigation), clean up first.
 let _activeTeardown = null;
 
-export function initGarden(data) {
+// options.debug → the dedicated /garden debug page: full OrbitControls camera
+// (rotate/pan/zoom) instead of the dashboard's idle-sway orbit, editor always
+// on, and grid/axes helpers. The dashboard passes no options (band defaults).
+export function initGarden(data, options = {}) {
   const root = document.getElementById("garden-root");
   if (!root) return function () {};
 
   if (_activeTeardown) _activeTeardown();
 
+  const debug = !!options.debug;
   const ctx = createContext(root, data);
+  ctx.debug = debug;
 
   // Layer registry — order is scene-build order. Append to grow the scene.
   const layers = [
+    createSky(),
     createLights(),
     createGround(),
     createPlants(),
-    createInteraction(),
+    // Camera control depends on context: inspect (OrbitControls) for the debug
+    // page, idle-sway orbit for the dashboard band.
+    debug ? createInspect() : createInteraction(),
   ];
-  if (editorEnabled()) layers.push(createEditor());
+  if (debug) layers.push(createDebug());
+  if (debug || editorEnabled()) layers.push(createEditor());
 
   for (const layer of layers) {
     if (layer.build) layer.build(ctx);

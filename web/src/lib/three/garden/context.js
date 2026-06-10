@@ -9,6 +9,7 @@
  * ======================================================================== */
 
 import * as THREE from "three";
+import GUI from "lil-gui";
 import { PAGE_BG } from "./constants.js";
 import { lightingFor } from "./lighting.js";
 
@@ -79,7 +80,9 @@ export function createContext(root, data) {
     },
     plants: [], // populated by the plants layer; interaction/editor read it
     layers: [],
+    controls: null, // set by the inspect layer (OrbitControls); editor reads it
     composer: null, // set in Phase C (post-processing)
+    gui: null, // single shared lil-gui panel; layers add folders via getGUI()
     alive: true, // flipped false in disposeContext; async layer work checks it
     _updates: [], // per-frame callbacks (t, ctx)
     _listeners: [], // [target, type, fn] for removal on teardown
@@ -90,6 +93,12 @@ export function createContext(root, data) {
     addListener(target, type, fn) {
       target.addEventListener(type, fn);
       this._listeners.push([target, type, fn]);
+    },
+    // Lazily create ONE shared debug panel; every debug layer adds a folder to
+    // it (avoids stacked, overlapping lil-gui instances). Destroyed in teardown.
+    getGUI() {
+      if (!this.gui) this.gui = new GUI({ title: "garden · debug" });
+      return this.gui;
     },
   };
 
@@ -112,6 +121,16 @@ export function createContext(root, data) {
 
 export function disposeContext(ctx) {
   ctx.alive = false;
+
+  // Drop the shared debug panel (if any layer created one).
+  if (ctx.gui) {
+    try {
+      ctx.gui.destroy();
+    } catch (e) {
+      /* already gone */
+    }
+    ctx.gui = null;
+  }
 
   // Drop every DOM listener (central + layer-registered).
   for (const [target, type, fn] of ctx._listeners) {

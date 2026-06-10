@@ -8,6 +8,12 @@
 
 import * as THREE from "three";
 
+// Global brightness multiplier applied to BOTH lights. The scene reads a little
+// darker under modern three's colour pipeline than it did on r128; this lifts it
+// back up while preserving the ambient:key ratio (so the look stays the same,
+// just brighter). Tune this one number to brighten/darken the whole scene.
+const LIGHT_GAIN = 1.5;
+
 // Warm key light + ambient tuned per time of day. keyPos doubles as the
 // sun/moon position so light and object always agree.
 export function lightingFor(period) {
@@ -49,10 +55,10 @@ export default function createLights() {
     build(ctx) {
       const lit = ctx.state.lit;
 
-      const ambient = new THREE.AmbientLight(lit.ambientColor, lit.ambientIntensity);
+      const ambient = new THREE.AmbientLight(lit.ambientColor, lit.ambientIntensity * LIGHT_GAIN);
       ctx.scene.add(ambient);
 
-      const key = new THREE.DirectionalLight(lit.keyColor, lit.keyIntensity);
+      const key = new THREE.DirectionalLight(lit.keyColor, lit.keyIntensity * LIGHT_GAIN);
       key.position.copy(lit.keyPos);
       key.castShadow = true;
       key.shadow.mapSize.set(1024, 1024);

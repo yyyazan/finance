@@ -4,7 +4,7 @@
  * Two complementary tools for placing plants by hand instead of editing numbers
  * and reloading:
  *   1. TransformControls — a drag-gizmo in the viewport (click a plant, then
- *      W/E/R to translate/rotate/scale).
+ *      G/E/R to translate/rotate/scale).
  *   2. lil-gui — a side panel with x/y/z + rotation + scale sliders per plant,
  *      and a "Log positions" button to dump the values to the console (+ clipboard).
  *
@@ -14,7 +14,6 @@
 
 import * as THREE from "three";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
-import GUI from "lil-gui";
 
 export function editorEnabled() {
   try {
@@ -49,9 +48,13 @@ export default function createEditor() {
       control = new TransformControls(ctx.camera, ctx.renderer.domElement);
       control.setSize(0.8);
       control.addEventListener("objectChange", refreshGui);
-      // Signal the interaction layer to yield the mouse during a gizmo drag.
+      // Signal the camera layer to yield the mouse during a gizmo drag. The
+      // dashboard's idle-sway orbit reads transformDragging; the debug page's
+      // OrbitControls (ctx.controls) must be hard-disabled synchronously here,
+      // or it would start rotating on the same pointerdown that grabs a handle.
       control.addEventListener("dragging-changed", (e) => {
         ctx.state.transformDragging = e.value;
+        if (ctx.controls) ctx.controls.enabled = !e.value;
       });
       // Modern three (r169+) exposes the gizmo via getHelper(); older builds were
       // an Object3D you add directly. Feature-detect so both work.
@@ -91,9 +94,10 @@ export default function createEditor() {
       ctx.addListener(ctx.canvas, "mousedown", onDown);
       ctx.addListener(ctx.canvas, "mouseup", onUp);
 
-      // Keyboard: W/E/R switch gizmo mode (like Godot), Esc deselects.
+      // Keyboard: G/E/R switch gizmo mode, Esc deselects. (Translate is G, not
+      // W, so it doesn't collide with the debug page's WASD camera movement.)
       function onKey(e) {
-        if (e.key === "w") control.setMode("translate");
+        if (e.key === "g") control.setMode("translate");
         else if (e.key === "e") control.setMode("rotate");
         else if (e.key === "r") control.setMode("scale");
         else if (e.key === "Escape") selectPlant(null);
@@ -101,6 +105,14 @@ export default function createEditor() {
       ctx.addListener(window, "keydown", onKey);
 
       // ── 2. lil-gui slider panel ──────────────────────────────────────────
+      let logCtrl = null;
+      const LOG_LABEL = "Log positions → console";
+      function flash(msg) {
+        if (!logCtrl) return;
+        logCtrl.name(msg);
+        setTimeout(() => logCtrl && logCtrl.name(LOG_LABEL), 1400);
+      }
+
       function logPositions() {
         const out = ctx.plants.map((h) => {
           const p = h.userData.position || {};
@@ -113,12 +125,24 @@ export default function createEditor() {
             scale: +h.scale.x.toFixed(2),
           };
         });
+        if (!out.length) {
+          console.warn("[garden] no plants yet — nothing to log");
+          flash("no plants yet");
+          return out;
+        }
         const json = JSON.stringify(out, null, 2);
-        console.log("[garden] plant layout:\n" + json);
-        try {
-          navigator.clipboard.writeText(json);
-        } catch (e) {
-          /* clipboard unavailable — console copy is enough */
+        // Inspectable object first, then the copy-paste-ready JSON string.
+        console.log(`[garden] plant layout (${out.length} plants):`, out);
+        console.log(json);
+        // Clipboard write is async and can reject (focus/permissions); reflect
+        // the real outcome on the button instead of swallowing it.
+        const p = navigator.clipboard && navigator.clipboard.writeText(json);
+        if (p && p.then) {
+          p.then(() => flash(`copied ${out.length} ✓`)).catch(() =>
+            flash(`logged ${out.length} (copy blocked)`)
+          );
+        } else {
+          flash(`logged ${out.length} ✓`);
         }
         return out;
       }
@@ -154,8 +178,8 @@ export default function createEditor() {
         });
       }
 
-      gui = new GUI({ title: "Garden editor" });
-      gui.add({ log: logPositions }, "log").name("Log positions → console");
+      gui = ctx.getGUI(); // shared debug panel (sky controls etc. live here too)
+      logCtrl = gui.add({ log: logPositions }, "log").name(LOG_LABEL);
 
       // Plants load async (VOX parse), so ctx.plants is usually still empty here.
       // Poll briefly until they appear, then build one folder per plant.
@@ -171,13 +195,7 @@ export default function createEditor() {
     },
 
     dispose() {
-      if (gui) {
-        try {
-          gui.destroy();
-        } catch (e) {
-          /* already gone */
-        }
-      }
+      // The shared GUI is owned/destroyed by the context, not the editor.
       if (control) {
         try {
           control.detach();
