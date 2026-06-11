@@ -63,7 +63,7 @@
 </script>
 
 <!-- stock mode renders the widget grid bare on the page paper; search keeps a card shell -->
-<section class="stage" class:stage-card={mode === 'search'}>
+<section class="stage" class:stage-card={mode === 'search'} class:stage-portfolio={mode === 'portfolio'}>
   {#if mode === 'stock'}
     {#key $detail.ticker}
       <div class="stage-in stage-widgets">
@@ -113,6 +113,10 @@
 
 <style>
   .stage { min-height: 0; height: 100%; display: flex; flex-direction: column; }
+  /* portfolio chart: a fixed-height widget so a tall sibling (e.g. market news
+     loading into the rail) can't stretch the shared grid row and grow the graph.
+     stock + search modes keep height:100% (page-scrolling grid / bounded card). */
+  .stage-portfolio { height: var(--stage-h, 520px); }
   /* search brings a card shell; stock mode is a bare widget grid; the chart card is its own chrome */
   .stage-card { background: var(--surface); border: var(--bw) solid var(--ink);
     border-radius: calc(var(--r) + 2px); box-shadow: var(--sh); overflow: hidden; }

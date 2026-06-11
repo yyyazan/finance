@@ -31,7 +31,11 @@
 
   let range = $state('ALL');
   let mode = $state('value');     // 'value' | 'return'
+  let chartType = $state('area'); // 'area' | 'line' — render of the value series
+  let benchmark = $state(true);   // show the SPY overlay line
+  let openMenu = $state(null);    // 'type' | 'compare' | null — toolbar dropdowns
   let hoverRow = $state(null);    // aligned row under the crosshair, or null at rest
+  const toggleMenu = (m) => (openMenu = openMenu === m ? null : m);
 
   const mapOf = (xy) => {
     const m = new Map();
@@ -139,6 +143,10 @@
     return () => { chart.remove(); chart = null; };
   });
 
+  // close the toolbar dropdowns on any outside click
+  function onWindowClick(e) { if (!e.target.closest?.('.pc-tool')) openMenu = null; }
+  onMount(() => { window.addEventListener('click', onWindowClick); return () => window.removeEventListener('click', onWindowClick); });
+
   // re-skin chrome (axes, grid, crosshair) when the theme flips
   $effect(() => {
     if (!chart) return;
@@ -153,8 +161,8 @@
   // Rebuild series whenever the window, mode, or theme changes.
   $effect(() => {
     if (!chart) return;
-    const v = view, m = mode, base = baseRow;
-    const showSpy = m === 'value' ? hasSpyUsd : hasSpyRet;
+    const v = view, m = mode, base = baseRow, t = chartType;
+    const showSpy = benchmark && (m === 'value' ? hasSpyUsd : hasSpyRet);
 
     for (const h of handles) chart.removeSeries(h);
     handles = [];
@@ -169,13 +177,15 @@
     });
 
     if (m === 'value') {
-      const area = chart.addSeries(AreaSeries, {
-        lineColor: BRAND, lineWidth: 2,
-        topColor: hexA(BRAND, 0.26), bottomColor: hexA(BRAND, 0),
-        priceLineVisible: false, lastValueVisible: false,
-      });
-      area.setData(v.map((r) => ({ time: r.t, value: r.pv })));
-      handles.push(area);
+      const main = t === 'line'
+        ? chart.addSeries(LineSeries, { color: BRAND, lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
+        : chart.addSeries(AreaSeries, {
+            lineColor: BRAND, lineWidth: 2,
+            topColor: hexA(BRAND, 0.26), bottomColor: hexA(BRAND, 0),
+            priceLineVisible: false, lastValueVisible: false,
+          });
+      main.setData(v.map((r) => ({ time: r.t, value: r.pv })));
+      handles.push(main);
       if (showSpy) {
         const sp = chart.addSeries(LineSeries, {
           color: PAL.SPY, lineWidth: 1.5, lineStyle: LineStyle.Dotted,
@@ -207,8 +217,9 @@
   });
 </script>
 
-<!-- two widgets matching the stock view's grid language: header (0.5) + chart -->
+<!-- two widgets matching the stock view's grid language: header (split 2-up) + chart -->
 <div class="pcg">
+  <div class="pc-head-row">
   <section class="pc-w pc-head-w">
   <div class="pc-eyebrow"><span class="pc-dot" aria-hidden="true"></span>Your portfolio</div>
   <div class="pc-head">
@@ -239,15 +250,46 @@
         {/if}
       {/if}
     </div>
-
-    <div class="pc-toggle" role="group" aria-label="metric">
-      <button class:on={mode === 'value'} onclick={() => (mode = 'value')}>Value</button>
-      <button class:on={mode === 'return'} onclick={() => (mode = 'return')}>Return</button>
-    </div>
   </div>
   </section>
+  <!-- right half intentionally blank — placeholder for a future widget -->
+  <section class="pc-w pc-head-empty" aria-hidden="true"></section>
+  </div>
 
   <section class="pc-w pc-chart-w">
+    <!-- toolbar mirrors the stock chart's gf-bar so both views line up -->
+    <div class="pc-bar">
+      <div class="pc-tool">
+        <button class="pc-btn" class:active={openMenu === 'type'} onclick={() => toggleMenu('type')}>
+          <svg class="pc-ic" viewBox="0 0 24 24" aria-hidden="true"><polyline points="2,15 8,9 13,13 22,4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" /></svg>{chartType === 'line' ? 'Line' : 'Area'}<span class="pc-cv" aria-hidden="true">▾</span>
+        </button>
+        {#if openMenu === 'type'}
+          <div class="pc-menu">
+            <button class="pc-item" class:sel={chartType === 'area'} onclick={() => { chartType = 'area'; openMenu = null; }}>Area</button>
+            <button class="pc-item" class:sel={chartType === 'line'} onclick={() => { chartType = 'line'; openMenu = null; }}>Line</button>
+          </div>
+        {/if}
+      </div>
+
+      <div class="pc-tool">
+        <button class="pc-btn" class:active={openMenu === 'compare'} onclick={() => toggleMenu('compare')}>
+          <span class="pc-ic" aria-hidden="true">⇄</span>Benchmark<span class="pc-cv" aria-hidden="true">▾</span>
+        </button>
+        {#if openMenu === 'compare'}
+          <div class="pc-menu pc-menu-wide">
+            <button class="pc-item" class:sel={benchmark} onclick={() => (benchmark = !benchmark)}>
+              <span class="pc-check">{benchmark ? '✓' : ''}</span>S&amp;P 500<span class="pc-sym">SPY</span>
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      <div class="pc-toggle" role="group" aria-label="metric">
+        <button class:on={mode === 'value'} onclick={() => (mode = 'value')}>Value</button>
+        <button class:on={mode === 'return'} onclick={() => (mode = 'return')}>Return</button>
+      </div>
+    </div>
+
     <div class="pc-canvas" bind:this={host}></div>
     <div class="pc-ranges" role="group" aria-label="range">
       {#each RANGES as r}
@@ -262,9 +304,15 @@
   .pcg { display: flex; flex-direction: column; gap: 16px; height: 100%; min-height: 0; }
   .pc-w { background: var(--surface); border: var(--bw) solid var(--ink); border-radius: var(--r);
     box-sizing: border-box; }
-  .pc-head-w { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; }
-  .pc-chart-w { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px;
-    padding: 14px 16px 12px; }
+  /* header row is split 2-up (right half blank for now); both halves + the chart
+     box are pinned to the stock view's dimensions (--title-h header · 440 chart)
+     so the graph sits in the same place when you toggle modes */
+  .pc-head-row { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .pc-head-w { height: var(--title-h, 152px); display: flex; flex-direction: column;
+    gap: 10px; padding: 12px 16px 14px; box-sizing: border-box; }
+  .pc-head-empty { height: var(--title-h, 152px); }
+  .pc-chart-w { flex: 0 0 440px; min-height: 0; display: flex; flex-direction: column; gap: 10px;
+    padding: 14px 16px; }
   .pc-eyebrow { display: flex; align-items: center; gap: 7px; font-family: var(--sans); font-size: 10px;
     font-weight: 700; text-transform: uppercase; letter-spacing: .14em; color: var(--brand); }
   .pc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); border: 1.5px solid var(--ink); }
@@ -279,8 +327,32 @@
     font-family: var(--mono); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .pc-muted { color: var(--muted); font-weight: 400; }
 
+  /* toolbar — mirrors StockChart's .gf-bar so the two charts align pixel-for-pixel */
+  .pc-bar { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .pc-tool { position: relative; }
+  .pc-btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    font-family: var(--sans); font-size: 12px; font-weight: 700; color: var(--ink);
+    padding: 5px 12px; background: transparent; border: var(--bw) solid var(--hairline);
+    border-radius: 999px; transition: border-color .12s ease, background .12s ease, color .12s ease; }
+  .pc-btn:hover { border-color: var(--ink); }
+  .pc-btn.active { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .pc-ic { font-size: 13px; opacity: .7; }
+  svg.pc-ic { width: 14px; height: 14px; }
+  .pc-cv { font-size: 9px; opacity: .6; margin-left: 1px; }
+  .pc-menu { position: absolute; top: calc(100% + 5px); left: 0; z-index: 20; min-width: 150px;
+    display: flex; flex-direction: column; padding: 5px; gap: 1px;
+    background: var(--surface); border: var(--bw) solid var(--ink); border-radius: var(--r); box-shadow: var(--sh); }
+  .pc-menu-wide { min-width: 185px; }
+  .pc-item { display: flex; align-items: center; gap: 8px; width: 100%; cursor: pointer; text-align: left;
+    font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--ink);
+    padding: 7px 9px; border: 0; background: transparent; border-radius: 6px; }
+  .pc-item:hover { background: var(--hover); }
+  .pc-item.sel { font-weight: 700; }
+  .pc-check { flex: 0 0 14px; font-size: 12px; color: var(--brand); }
+  .pc-sym { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
   /* metric toggle — system pills (text → outline hover → solid ink when on) */
-  .pc-toggle { display: inline-flex; flex: 0 0 auto; gap: 2px; }
+  .pc-toggle { display: inline-flex; flex: 0 0 auto; gap: 2px; margin-left: auto; }
   .pc-toggle button { font-family: var(--mono); font-size: 11px; font-weight: 600; cursor: pointer;
     padding: 5px 12px; background: transparent; color: var(--muted);
     border: var(--bw) solid transparent; border-radius: 999px;
@@ -288,7 +360,7 @@
   .pc-toggle button:hover { color: var(--ink); border-color: var(--ink); }
   .pc-toggle button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 
-  .pc-canvas { flex: 1; min-height: 180px; }
+  .pc-canvas { flex: 1; min-height: 0; }
 
   /* GF-style range tabs — identical states to StockChart's .gf-range */
   .pc-ranges { display: flex; align-items: center; gap: 2px;
@@ -302,7 +374,8 @@
   .up { color: var(--gain); }
   .down { color: var(--loss); }
 
-  @media (max-width: 1100px) {
-    .pc-canvas { min-height: 220px; }
+  /* mirror StockPanel's <900 shrink so the two charts stay matched on small screens */
+  @media (max-width: 900px) {
+    .pc-chart-w { flex-basis: 340px; }
   }
 </style>

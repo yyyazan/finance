@@ -171,10 +171,10 @@
           <span class="pos-ret {(stock.plPct ?? 0) >= 0 ? 'up' : 'down'}">
             <b>{pctS(stock.plPct)}</b><small>{usdS(stock.plAbs)}</small>
           </span>
-          <span class="pos-kv"><span>shares</span><b>{f(stock.shares)}</b></span>
-          <span class="pos-kv"><span>avg cost</span><b>${f(stock.avgCost)}</b></span>
-          <span class="pos-kv"><span>value</span><b>${f(stock.mktValue)}</b></span>
-          <span class="pos-kv"><span>weight</span><b>{stock.weight != null ? stock.weight + '%' : '—'}</b></span>
+          <span class="pos-kv"><span>sh</span><b>{f(stock.shares)}</b></span>
+          <span class="pos-kv"><span>avg</span><b>${f(stock.avgCost)}</b></span>
+          <span class="pos-kv"><span>val</span><b>${f(stock.mktValue)}</b></span>
+          <span class="pos-kv"><span>wt</span><b>{stock.weight != null ? stock.weight + '%' : '—'}</b></span>
         </div>
       {:else}
         <button class="btn btn-line hw-watch" class:on={watched} disabled={watchBusy} onclick={onWatch}>
@@ -295,19 +295,27 @@
 
   /* header widget — 4 × 0.5; back rides the system .btn top right, watch is a
      .btn-line pill in the quote row */
-  .w-head { grid-column: 1 / -1; min-height: 104px; display: flex; flex-direction: column;
+  /* locked to --title-h so the watchlist (no position row) header matches the
+     taller holdings header — space-between drops the watch button where the
+     position row would sit. min-height (not height) so a wrapped position row is
+     never clipped; --title-h is sized to fit the holdings content. */
+  .w-head { grid-column: 1 / -1; min-height: var(--title-h, 152px); display: flex; flex-direction: column;
     justify-content: space-between; gap: 10px; padding: 12px 16px 14px; }
   .hw-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .hw-back span { font-size: 15px; line-height: 1; }
   .hw-crumb { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
   .hw-watch { align-self: flex-end; }
-  .hw-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+  .hw-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .hw-name { margin: 0 0 5px; font-family: var(--sans); font-size: 20px; font-weight: 700;
     letter-spacing: -.01em; line-height: 1.1; }
   .hw-quote { display: flex; align-items: baseline; gap: 11px; flex-wrap: wrap; }
   .hw-px { font-family: var(--mono); font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
   .hw-day { font-family: var(--mono); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .hw-pos { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+  /* position row: abbreviated labels (sh/avg/val/wt) + a modest gap trim let the
+     five stats fit on ONE line at the narrow stage width, so the holdings header
+     stays compact (~150) instead of wrapping to a tall two-line block. Figures
+     keep their full size for legibility. */
+  .hw-pos { display: flex; align-items: baseline; gap: 6px 12px; flex-wrap: wrap; }
   .pos-ret { display: inline-flex; align-items: baseline; gap: 7px; }
   .pos-ret b { font-family: var(--mono); font-size: 17px; font-weight: 700; line-height: 1; }
   .pos-ret small { font-family: var(--mono); font-size: 11px; font-weight: 700; opacity: .85; }

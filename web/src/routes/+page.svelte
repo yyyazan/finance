@@ -7,6 +7,8 @@
   import AllocationRing from '$lib/components/AllocationRing.svelte';
   import DashboardStage from '$lib/components/DashboardStage.svelte';
   import MarketPulse from '$lib/components/MarketPulse.svelte';
+  import TradeTicket from '$lib/components/TradeTicket.svelte';
+  import ResearchChat from '$lib/components/ResearchChat.svelte';
   import GardenView from '$lib/components/GardenView.svelte';
   import { primeHoldings } from '$lib/stores.js';
 
@@ -58,6 +60,7 @@
         <CashGoalCard cash={d.kpis.cash} portfolioValue={d.kpis.portfolio_value}
           goalLabel="monthly goal" goalCurrent={d.goal.current} goalTarget={d.goal.target}
           onSaved={refresh} />
+        <TradeTicket onSaved={refresh} />
         <div class="rail-duo rail-bare">
           <DividendWraith data={d.dividends} holdings={d.cards} />
           <AllocationRing holdings={d.cards.filter((c) => !c.is_joker)} />
@@ -65,14 +68,9 @@
         <MarketPulse />
       </aside>
 
-      <!-- scaffolding column: empty slots to design future widgets into -->
+      <!-- rightmost column: mock research chat -->
       <aside class="dash-templates">
-        {#each [{ h: 'tall' }, { h: 'short' }, { h: 'short' }] as t, i (i)}
-          <button class="tpl tpl-{t.h}" type="button" aria-label="Empty widget slot">
-            <span class="tpl-plus" aria-hidden="true">+</span>
-            <span class="tpl-label">widget</span>
-          </button>
-        {/each}
+        <ResearchChat />
       </aside>
     </div>
   </div>
@@ -81,31 +79,25 @@
 {/if}
 
 <style>
-  /* stage : rail : templates = 2 : 1 : 1 (stage one unit narrower than before) */
-  .dash { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr) minmax(240px, 1fr);
+  /* stage : rail : chat = 2 : 1 : 1 (stage one unit narrower than before) */
+  /* --stage-h = title card (--title-h) + gap (16) + chart box (440); keeps the
+     portfolio stage the exact height of the stock view's header + chart stack */
+  .dash { --stage-h: calc(var(--title-h) + 16px + 440px); display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr) minmax(240px, 1fr);
     gap: 16px; align-items: start; }
-  .dash > :global(.stage) { min-height: 520px; }
+  .dash > :global(.stage) { min-height: var(--stage-h); }
 
   .dash-rail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   .rail-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .rail-duo > :global(.glass-card) { padding: 12px 14px; }
+  /* KPI duo locked to the title-card height so the top band lines up across columns
+     (rail-bare = dividends + allocation, left to size themselves) */
+  .rail-duo:not(.rail-bare) > :global(.glass-card) { height: var(--title-h); }
   /* dividends + allocation: intentionally chrome-less, side by side */
   .rail-bare { align-items: center; }
 
-  /* template column — dashed placeholder slots to build future widgets into */
+  /* rightmost column — mock research chat */
   .dash-templates { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-  .tpl { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-    width: 100%; box-sizing: border-box; cursor: pointer; color: var(--muted);
-    background: color-mix(in srgb, var(--paper) 55%, transparent);
-    border: 2px dashed color-mix(in srgb, var(--ink) 28%, transparent); border-radius: var(--r);
-    transition: border-color .14s ease, color .14s ease, transform .12s ease, background .14s ease; }
-  .tpl:hover { border-color: var(--ink); color: var(--ink); transform: translateY(-2px);
-    background: color-mix(in srgb, var(--paper) 80%, transparent); }
-  .tpl-tall { min-height: 224px; }
-  .tpl-short { min-height: 150px; }
-  .tpl-plus { font-family: var(--sans); font-size: 26px; font-weight: 400; line-height: 1; }
-  .tpl-label { font-family: var(--sans); font-size: 10px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .14em; }
 
   @media (max-width: 1280px) {
     /* drop the template column first; keep stage + rail at 2 : 1 */
@@ -114,7 +106,10 @@
   }
   @media (max-width: 1100px) {
     .dash { grid-template-columns: 1fr; }
-    .dash > :global(.stage) { min-height: 480px; }
+  }
+  @media (max-width: 900px) {
+    /* chart box shrinks to 340 (mirrors StockPanel) */
+    .dash { --stage-h: calc(var(--title-h) + 16px + 340px); }
   }
   @media (max-width: 700px) {
     .rail-duo { gap: 12px; }

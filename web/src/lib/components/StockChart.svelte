@@ -271,7 +271,7 @@
   <div class="gf-bar">
     <div class="gf-tool">
       <button class="gf-btn" class:active={openMenu === 'type'} onclick={() => toggleMenu('type')}>
-        <span class="gf-ic" aria-hidden="true">◔</span>{TYPE_LABEL[chartType]}<span class="gf-cv" aria-hidden="true">▾</span>
+        <svg class="gf-ic" viewBox="0 0 24 24" aria-hidden="true"><polyline points="2,15 8,9 13,13 22,4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" /></svg>{TYPE_LABEL[chartType]}<span class="gf-cv" aria-hidden="true">▾</span>
       </button>
       {#if openMenu === 'type'}
         <div class="gf-menu">
@@ -357,6 +357,7 @@
   .gf-btn:hover { border-color: var(--ink); }
   .gf-btn.active { background: var(--ink); border-color: var(--ink); color: var(--paper); }
   .gf-ic { font-size: 13px; opacity: .7; }
+  svg.gf-ic { width: 14px; height: 14px; }
   .gf-cv { font-size: 9px; opacity: .6; margin-left: 1px; }
   .gf-menu { position: absolute; top: calc(100% + 5px); left: 0; z-index: 20; min-width: 150px;
     display: flex; flex-direction: column; padding: 5px; gap: 1px;

@@ -129,7 +129,10 @@ a { color: inherit; text-decoration: none; }
 /* --u = the dashboard's single 1×1 unit (one grid ROW). every widget is N cols ×
    M of these rows: KPI 1×1, spark 2×1, deck 2×2, slot 2×1, peek 1×3, chart 3×3.
    columns stay 6 & fluid; only the row height is fixed, so the fold stays put. */
-.content { --u: 168px; padding: 24px 28px; box-sizing: border-box; width: 100%; min-width: 0; max-width: 1400px; margin-inline: auto; display: flex; flex-direction: column; gap: 18px; }
+/* --title-h = the canonical height for every "title" card (stock header, portfolio
+   header, KPI cards). Locked to the tallest variant — the holdings stock header,
+   which carries a wrapped position row — so the whole top band lines up. */
+.content { --u: 168px; --title-h: 152px; padding: 24px 28px; box-sizing: border-box; width: 100%; min-width: 0; max-width: 1400px; margin-inline: auto; display: flex; flex-direction: column; gap: 18px; }
 /* dashboard only: tighter, even rhythm between garden · KPIs · deck · ribbon */
 .content-has-hero { padding-top: 0; gap: 14px; }
 .page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }

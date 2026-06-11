@@ -7,9 +7,11 @@
 
   let { holdings = [] } = $props();   // dashboard cards (non-joker)
 
-  const COLORS = ['#5fb3c4', '#e08a6a', '#0fb39a', '#d8b878', '#9bbf8a', '#c994e8'];
+  // 10 distinct hues (existing five + accent deck) so 10 segments never repeat a colour
+  const COLORS = ['#5fb3c4', '#e08a6a', '#0fb39a', '#d8b878', '#9bbf8a',
+                  '#c994e8', '#ff90e8', '#ffc900', '#5b8def', '#ff6e5e'];
   const OTHER_C = '#8a8478';
-  const MAX_SEGS = 6;
+  const MAX_SEGS = 10;
 
   const rows = $derived(
     [...holdings].filter((c) => (c.position_pct ?? 0) > 0)
@@ -36,11 +38,13 @@
     return segs;
   });
 
+  // idle reads diversification at a glance: holdings COUNT as the hero (the 'per'
+  // slot is too small for a word, so 'holdings' rides the tag), and the top-3
+  // combined weight as the always-meaningful concentration subtitle
   const idle = $derived.by(() => {
-    const top = rows[0];
-    return top
-      ? { tag: 'allocation', hero: (top.position_pct ?? 0).toFixed(1), per: '%', sub: `top · ${top.ticker}` }
-      : { tag: 'allocation', hero: '—', sub: 'no positions' };
+    if (!rows.length) return { tag: 'allocation', hero: '—', sub: 'no positions' };
+    const top3 = rows.slice(0, 3).reduce((s, c) => s + (c.position_pct ?? 0), 0);
+    return { tag: rows.length === 1 ? 'holding' : 'holdings', hero: String(rows.length), sub: `top 3 · ${Math.round(top3)}%` };
   });
 </script>
 

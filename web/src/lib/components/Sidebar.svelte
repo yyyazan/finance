@@ -140,7 +140,10 @@
   .rh-win { display: inline-flex; gap: 2px; }
   .rh-win :global(.rh-btn) { font-size: 9px; padding: 2px 8px; }
 
-  .rail { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; }
+  /* scrollable holdings list — keep it scrollable but hide the scrollbar chrome */
+  .rail { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px;
+    scrollbar-width: none; -ms-overflow-style: none; }
+  .rail::-webkit-scrollbar { width: 0; height: 0; display: none; }
   .rail-empty { padding: 10px 6px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 
   /* ── watched (non-held) tickers: same rows, no growth strip ── */

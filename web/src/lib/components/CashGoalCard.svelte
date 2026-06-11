@@ -170,30 +170,33 @@
 
   /* Amount entry: one conjoined ink/white bar — [ +/− ] [ $ number ] [ ✓ ].
      Radius + shadow match the bottom allocation ribbon (.alloc-ribbon). */
+  /* The panel sits on a fixed light (yellow) bg, so its controls use fixed ink/white
+     colors (NOT theme vars) — otherwise dark-mode --ink turns the input text and
+     borders white-on-white. Keeps --bw/--sh from the design system. */
   .cg-entry { flex: 0 0 auto; display: flex; align-items: stretch; height: 30px;
-    background: #fff; border: var(--bw) solid var(--ink); border-radius: var(--r); overflow: hidden; box-shadow: var(--sh); }
+    background: #fff; border: var(--bw) solid #1a1a1a; border-radius: var(--r); overflow: hidden; box-shadow: var(--sh); }
   /* type error on insert → the white amount area turns pale red */
   .cg-entry.invalid, .cg-entry.invalid .cg-amount { background: #ffd9d9; }
-  .cg-seg { flex: 0 0 30px; width: 30px; padding: 0; border: 0; background: var(--ink); color: #fff;
+  .cg-seg { flex: 0 0 30px; width: 30px; padding: 0; border: 0; background: #1a1a1a; color: #fff;
     font-family: var(--sans); font-size: 17px; font-weight: 800; line-height: 1; cursor: pointer;
     display: flex; align-items: center; justify-content: center; }
-  .cg-sign { border-right: var(--bw) solid var(--ink); }
-  .cg-save { border-left: var(--bw) solid var(--ink); font-size: 15px; }
+  .cg-sign { border-right: var(--bw) solid #1a1a1a; }
+  .cg-save { border-left: var(--bw) solid #1a1a1a; font-size: 15px; }
   .cg-seg:active { background: #000; }
   .cg-save:disabled { opacity: .4; cursor: default; }
   .cg-amount { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 3px; padding: 0 10px; background: #fff; }
-  .cg-dollar { flex: 0 0 auto; color: var(--ink); opacity: .35; font-family: var(--mono); font-size: 14px; font-weight: 700; }
+  .cg-dollar { flex: 0 0 auto; color: #1a1a1a; opacity: .35; font-family: var(--mono); font-size: 14px; font-weight: 700; }
   .cg-amount-input { flex: 1 1 auto; min-width: 0; width: 100%; padding: 0; border: 0; outline: none; background: transparent;
-    font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums;
+    font-family: var(--mono); font-size: 14px; font-weight: 700; color: #1a1a1a; font-variant-numeric: tabular-nums;
     -moz-appearance: textfield; appearance: textfield; }
-  .cg-amount-input::placeholder { color: var(--ink); opacity: .3; }
+  .cg-amount-input::placeholder { color: #1a1a1a; opacity: .3; }
   .cg-amount-input::-webkit-outer-spin-button, .cg-amount-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
   /* Date row: native date input (calendar icon + typed entry), same behaviour as the log tab.
      Radius + shadow match the bottom allocation ribbon (.alloc-ribbon). */
   .cg-date-input { flex: 0 0 auto; box-sizing: border-box; height: 28px; width: 100%;
-    padding: 0 12px; border: var(--bw) solid var(--ink); border-radius: var(--r); background: #fff; box-shadow: var(--sh);
-    font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--ink); cursor: pointer; }
+    padding: 0 12px; border: var(--bw) solid #1a1a1a; border-radius: var(--r); background: #fff; box-shadow: var(--sh);
+    font-family: var(--mono); font-size: 12px; font-weight: 700; color: #1a1a1a; cursor: pointer; }
   .cg-date-input::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .85; }
 
   .cg-save-err { flex: 0 0 auto; color: var(--loss, #a3261d); font-family: var(--mono); font-size: 10px; font-weight: 700; text-align: center; }
