@@ -19,7 +19,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 
 // Deterministic mock dividend yield (%) per ticker — its OWN seed (salt '|div')
 // so it's independent of the price-series PRNG. ~55% of names pay; payers yield
-// 0.4%-4.2%. Shared by the deep view's "div yld" stat AND the dividend wraith, so
+// 0.4%-4.2%. Shared by the deep view's "div yld" stat AND the dividend ring, so
 // the two always agree for a given ticker. SWAP POINT: replace with the real
 // yfinance yield (info.dividendYield) alongside the rest of /api/stock.
 export function divYieldOf(ticker) {
@@ -49,7 +49,7 @@ export function mockStock(h) {
   const mktValue = h?.value ?? +(price * shares).toFixed(2);
   const sharesOut = lerp(0.3e9, 6e9, r());
   const marketCap = price * sharesOut;
-  const divYield = divYieldOf(t);   // shared with the dividend wraith (see divYieldOf)
+  const divYield = divYieldOf(t);   // shared with the dividend ring (see divYieldOf)
   const beta = +lerp(0.7, 2.1, r()).toFixed(2);
   const avgVolume = Math.round(lerp(1.5e6, 45e6, r()));
   const volume = Math.round(avgVolume * lerp(0.5, 1.8, r()));
@@ -125,7 +125,7 @@ export function priceSeries(ticker, range, anchor) {
 // Per-holding monthly dividends from real positions x the mock yield above.
 // Accepts the dashboard `cards` payload (or any [{ticker|t, company_name|name,
 // market_value|value}]). Returns payers only, biggest first, plus the totals the
-// wraith's hero shows. SWAP POINT: a real /api/dividends returns this same shape.
+// ring's hero shows. SWAP POINT: a real /api/dividends returns this same shape.
 export function mockDividends(holdings) {
   const items = (holdings ?? [])
     .filter((h) => h && !h.is_joker)

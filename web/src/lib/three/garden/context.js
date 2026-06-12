@@ -23,6 +23,17 @@ function placeCamera(camera, target, orbit) {
   camera.lookAt(target);
 }
 
+// Three.js cameras take a VERTICAL fov, but our viewports differ wildly in shape
+// (wide-short dashboard band ≈ 6:1, mobile hero ≈ 2:1, square-ish debug page). A
+// fixed vertical fov makes the wide band reveal the whole world. So we hold the
+// HORIZONTAL fov constant and derive vertical from the live aspect — framing the
+// garden by width stays consistent everywhere; taller viewports just show more
+// ground/sky. tan(h/2) = tan(v/2) · aspect  ⟹  v = 2·atan(tan(h/2) / aspect).
+function vFovForAspect(hFovDeg, aspect) {
+  const h = THREE.MathUtils.degToRad(hFovDeg);
+  return THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(h / 2) / aspect));
+}
+
 export function createContext(root, data) {
   const positions = (data && data.positions) || [];
   const period = (data && data.period) || "afternoon";
@@ -37,11 +48,23 @@ export function createContext(root, data) {
   // tending it, but shallow enough that the horizon — and the sun/moon in the
   // sky above it — stay in frame. Drag to orbit (interaction layer), so you can
   // swing up to look at the sky.
-  const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
-  const target = new THREE.Vector3(0, 1.2, 0);
-  // Spherical orbit around `target` (azimuth, elevation, radius). Pulled back
-  // far enough to frame a full row of plants across the bed.
-  const orbit = { az: 0, el: 0.24, radius: 16, dragging: false };
+  // H_FOV is the horizontal field of view we hold constant; the camera's vertical
+  // fov is derived from it + the current aspect (see vFovForAspect / ctx.applyFov),
+  // so the framing survives the band ↔ mobile ↔ debug aspect swings. Tune H_FOV on
+  // /garden with the "h-fov" slider, then "copy position".
+  const H_FOV = 83;
+  const camera = new THREE.PerspectiveCamera(
+    vFovForAspect(H_FOV, width / height),
+    width / height,
+    0.1,
+    100
+  );
+  camera.userData.hFov = H_FOV; // source of truth; vertical fov is derived
+  // Default framing — captured in the /garden inspector ("copy position"). Frames
+  // the slot cluster (see PLANT_SLOTS) at a low three-quarter angle.
+  const target = new THREE.Vector3(2.921, 1.871, -2.734);
+  // Spherical orbit around `target` (azimuth, elevation, radius).
+  const orbit = { az: 0.582, el: 0.216, radius: 16.963, dragging: false };
   placeCamera(camera, target, orbit);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -100,6 +123,12 @@ export function createContext(root, data) {
       if (!this.gui) this.gui = new GUI({ title: "garden · debug" });
       return this.gui;
     },
+    // Re-derive the vertical fov from the held horizontal fov + current aspect.
+    // Called on every resize and by the debug "h-fov" slider.
+    applyFov() {
+      this.camera.fov = vFovForAspect(this.camera.userData.hFov, this.camera.aspect);
+      this.camera.updateProjectionMatrix();
+    },
   };
 
   // Central resize: keep the camera aspect, renderer, and (later) composer in
@@ -110,7 +139,7 @@ export function createContext(root, data) {
     ctx.size.w = w;
     ctx.size.h = h;
     camera.aspect = w / h;
-    camera.updateProjectionMatrix();
+    ctx.applyFov(); // re-derive vertical fov for the new aspect (+ updates projection)
     renderer.setSize(w, h);
     if (ctx.composer) ctx.composer.setSize(w, h);
   }

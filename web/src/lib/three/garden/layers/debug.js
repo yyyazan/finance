@@ -13,7 +13,7 @@ export default function createDebug() {
     name: "debug",
     build(ctx) {
       // Ground grid, sitting just above the bed (y≈0) to avoid z-fighting.
-      const grid = new THREE.GridHelper(40, 40, 0x888888, 0xcccccc);
+      const grid = new THREE.GridHelper(80, 80, 0x888888, 0xcccccc);
       grid.position.y = 0.01;
       grid.material.opacity = 0.4;
       grid.material.transparent = true;

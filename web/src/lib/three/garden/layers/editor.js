@@ -14,6 +14,7 @@
 
 import * as THREE from "three";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
+import { PLANT_SLOTS } from "../constants.js";
 
 export function editorEnabled() {
   try {
@@ -35,6 +36,7 @@ export default function createEditor() {
     name: "editor",
     build(ctx) {
       const syncs = []; // per-plant closures that pull holder state into the GUI
+      const markers = []; // draggable rings for slots with no holding yet
 
       // Refresh every GUI control from the live object state. Called when the
       // gizmo moves a plant so the sliders track the drag (and vice-versa).
@@ -82,13 +84,18 @@ export default function createEditor() {
         ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
         ray.setFromCamera(ndc, ctx.camera);
-        const hits = ray.intersectObjects(ctx.plants, true);
+        const hits = ray.intersectObjects(ctx.plants.concat(markers), true);
         if (!hits.length) {
           selectPlant(null);
           return;
         }
         let holder = hits[0].object;
-        while (holder.parent && holder.name !== "plant") holder = holder.parent;
+        while (
+          holder.parent &&
+          holder.name !== "plant" &&
+          holder.name !== "slotMarker"
+        )
+          holder = holder.parent;
         selectPlant(holder);
       }
       ctx.addListener(ctx.canvas, "mousedown", onDown);
@@ -147,10 +154,87 @@ export default function createEditor() {
         return out;
       }
 
+      // ── Copy PLANT_SLOTS ─────────────────────────────────────────────────
+      // Every editable object (a placed plant or an empty-slot ring) carries its
+      // slotIndex. Gather them, sort by slot, and emit a paste-ready array for
+      // constants.js — so you drag the whole garden into shape, then capture all
+      // slots in one click instead of copying positions one at a time.
+      let slotsCtrl = null;
+      const SLOTS_LABEL = "Copy PLANT_SLOTS";
+      function flashSlots(msg) {
+        if (!slotsCtrl) return;
+        slotsCtrl.name(msg);
+        setTimeout(() => slotsCtrl && slotsCtrl.name(SLOTS_LABEL), 1400);
+      }
+      function editableObjects() {
+        // plants first, then empty markers; each has userData.slotIndex.
+        return ctx.plants.concat(markers);
+      }
+      function copySlots() {
+        const rows = editableObjects()
+          .map((o) => ({
+            i: o.userData.slotIndex,
+            x: +o.position.x.toFixed(2),
+            z: +o.position.z.toFixed(2),
+            rot: +o.rotation.y.toFixed(3),
+          }))
+          .sort((a, b) => a.i - b.i);
+        if (!rows.length) {
+          flashSlots("no slots yet");
+          return;
+        }
+        const body = rows
+          .map((s) => `  { x: ${s.x}, z: ${s.z}, rot: ${s.rot} },`)
+          .join("\n");
+        const text = `export const PLANT_SLOTS = [\n${body}\n];`;
+        console.log(`[garden] ${rows.length} slots:\n` + text);
+        const p = navigator.clipboard && navigator.clipboard.writeText(text);
+        if (p && p.then) {
+          p.then(() => flashSlots(`copied ${rows.length} ✓`)).catch(() =>
+            flashSlots(`logged ${rows.length} (copy blocked)`)
+          );
+        } else {
+          flashSlots(`logged ${rows.length} ✓`);
+        }
+      }
+
+      // A flat ring marking an empty slot — draggable like a plant so the full
+      // 20-slot layout can be arranged even when fewer holdings are loaded.
+      function spawnMarkers() {
+        const occupied = new Set(
+          ctx.plants.map((h) => h.userData.slotIndex)
+        );
+        for (let i = 0; i < PLANT_SLOTS.length; i++) {
+          if (occupied.has(i)) continue;
+          const slot = PLANT_SLOTS[i];
+          const ring = new THREE.Mesh(
+            new THREE.TorusGeometry(0.5, 0.05, 8, 24),
+            new THREE.MeshBasicMaterial({
+              color: 0x4a7c59,
+              transparent: true,
+              opacity: 0.55,
+            })
+          );
+          ring.rotation.x = Math.PI / 2; // lay flat on the bed
+          const m = new THREE.Group();
+          m.add(ring);
+          m.position.set(slot.x, 0.02, slot.z);
+          m.rotation.y = slot.rot || 0;
+          m.name = "slotMarker";
+          m.userData.slotIndex = i;
+          ctx.scene.add(m);
+          markers.push(m);
+        }
+      }
+
       function buildFolders() {
-        ctx.plants.forEach((holder, i) => {
+        editableObjects().forEach((holder) => {
           const pos = holder.userData.position || {};
-          const f = gui.addFolder(pos.ticker || "plant " + i);
+          const isMarker = holder.name === "slotMarker";
+          const label = isMarker
+            ? `slot ${holder.userData.slotIndex} (empty)`
+            : pos.ticker || `slot ${holder.userData.slotIndex}`;
+          const f = gui.addFolder(label);
           f.add(holder.position, "x", -20, 20, 0.05);
           f.add(holder.position, "y", -2, 6, 0.05);
           f.add(holder.position, "z", -8, 8, 0.05);
@@ -162,12 +246,15 @@ export default function createEditor() {
               holder.rotation.y = THREE.MathUtils.degToRad(v);
             });
 
+          // Markers don't carry an allocation scale — only plants get the slider.
           const scl = { s: holder.scale.x || 1 };
-          f.add(scl, "s", 0.2, 3, 0.01)
-            .name("scale")
-            .onChange((v) => {
-              holder.scale.setScalar(v);
-            });
+          if (!isMarker) {
+            f.add(scl, "s", 0.2, 3, 0.01)
+              .name("scale")
+              .onChange((v) => {
+                holder.scale.setScalar(v);
+              });
+          }
 
           f.close();
           // Keep this folder's rot/scale proxies in step with gizmo drags.
@@ -180,13 +267,15 @@ export default function createEditor() {
 
       gui = ctx.getGUI(); // shared debug panel (sky controls etc. live here too)
       logCtrl = gui.add({ log: logPositions }, "log").name(LOG_LABEL);
+      slotsCtrl = gui.add({ copy: copySlots }, "copy").name(SLOTS_LABEL);
 
       // Plants load async (VOX parse), so ctx.plants is usually still empty here.
-      // Poll briefly until they appear, then build one folder per plant.
+      // Poll briefly until they appear, then spawn empty-slot markers + folders.
       let tries = 0;
       (function waitForPlants() {
         if (!ctx.alive) return; // scene torn down while we waited
         if (ctx.plants.length) {
+          spawnMarkers();
           buildFolders();
           return;
         }

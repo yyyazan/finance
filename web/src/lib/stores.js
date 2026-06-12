@@ -13,7 +13,7 @@ export const detail = writable(null);
 export const searchOpen = writable(false);
 
 // Live intraday moves polled from /api/momentum: { TICKER: { day_pct, week_pct } }.
-// The sidebar rail's mover strips read this so they stay live like the old deck.
+// The sidebar rail's mover strips read this so they stay live.
 export const moves = writable({});
 let momentumStarted = false;
 export function startMomentum() {

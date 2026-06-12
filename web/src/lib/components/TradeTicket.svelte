@@ -47,6 +47,9 @@
   let tickerEl;
 
   const flipSide = () => (side = side === 'buy' ? 'sell' : 'buy');
+  // once the user edits the ticker, stop the auto-prefill — otherwise deleting
+  // the last character re-fills it with the top holding (the "can't clear" bug)
+  let tickerTouched = $state(false);
 
   async function save() {
     if (saving) return;
@@ -77,9 +80,9 @@
     }
   }
 
-  // Prefill ticker with the largest holding, and focus it when the panel opens.
+  // Prefill ticker with the largest holding (once, before the user types).
   $effect(() => {
-    if (!ticker && $holdings?.length) {
+    if (!tickerTouched && !ticker && $holdings?.length) {
       ticker = [...$holdings].sort((a, b) => (b.position_pct ?? 0) - (a.position_pct ?? 0))[0].ticker;
     }
   });
@@ -128,7 +131,7 @@
       <input class="tt-in tt-ticker" bind:value={ticker} bind:this={tickerEl} placeholder="AAPL"
         list="tt-tickers" autocomplete="off" autocorrect="off" spellcheck="false"
         style="text-transform:uppercase"
-        oninput={() => { saveError = null; }}
+        oninput={() => { tickerTouched = true; saveError = null; }}
         onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }}
         aria-label="Ticker" />
       <input class="tt-in tt-shares" type="number" step="any" min="0" inputmode="decimal" placeholder="0"

@@ -22,6 +22,7 @@ import createInteraction from "./layers/interaction.js";
 import createInspect from "./layers/inspect.js";
 import createDebug from "./layers/debug.js";
 import createEditor, { editorEnabled } from "./layers/editor.js";
+import createPick from "./layers/pick.js";
 
 // One live garden at a time. If initGarden runs again before the previous mount
 // tore down (defensive against double-mounts / fast navigation), clean up first.
@@ -51,7 +52,14 @@ export function initGarden(data, options = {}) {
     debug ? createInspect() : createInteraction(),
   ];
   if (debug) layers.push(createDebug());
-  if (debug || editorEnabled()) layers.push(createEditor());
+  // Editor (gizmo picking) on the debug page; otherwise the interactive pick
+  // layer (hover glow + tooltip + click-to-open + wind sway) on the live heroes.
+  const wantEditor = debug || editorEnabled();
+  if (wantEditor) layers.push(createEditor());
+  else
+    layers.push(
+      createPick({ onHover: options.onHover, onPick: options.onPick })
+    );
 
   for (const layer of layers) {
     if (layer.build) layer.build(ctx);

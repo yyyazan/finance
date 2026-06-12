@@ -49,6 +49,66 @@ export default function createInspect() {
 
       ctx.controls = controls; // editor toggles .enabled during gizmo drags
 
+      // Default framing captured at build (context.js values), so "reset view"
+      // always returns to the committed default regardless of how far we've flown.
+      const home = {
+        target: ctx.state.target.clone(),
+        orbit: { ...ctx.state.orbit },
+      };
+      // Same spherical formula as context.js placeCamera().
+      function placeFromOrbit(target, orbit) {
+        ctx.camera.position.set(
+          target.x + orbit.radius * Math.cos(orbit.el) * Math.sin(orbit.az),
+          target.y + orbit.radius * Math.sin(orbit.el),
+          target.z + orbit.radius * Math.cos(orbit.el) * Math.cos(orbit.az)
+        );
+      }
+
+      // ── Copy-camera button ────────────────────────────────────────────────
+      // Back-computes orbit params from wherever OrbitControls left the camera,
+      // then copies a paste-ready snippet for context.js to the clipboard.
+      const camFolder = ctx.getGUI().addFolder("camera");
+      const copyBtn = {
+        "copy position"() {
+          const pos = ctx.camera.position;
+          const tgt = controls.target;
+          const dx = pos.x - tgt.x;
+          const dy = pos.y - tgt.y;
+          const dz = pos.z - tgt.z;
+          const radius = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          const el = Math.asin(dy / radius);
+          const az = Math.atan2(dx, dz);
+          const r = (n) => Math.round(n * 1000) / 1000;
+          const snippet =
+            `// paste into context.js → createContext()\n` +
+            `const H_FOV = ${r(ctx.camera.userData.hFov)}; // horizontal fov; vertical is derived per aspect\n` +
+            `const target = new THREE.Vector3(${r(tgt.x)}, ${r(tgt.y)}, ${r(tgt.z)});\n` +
+            `const orbit = { az: ${r(az)}, el: ${r(el)}, radius: ${r(radius)}, dragging: false };`;
+          navigator.clipboard.writeText(snippet).then(() => {
+            console.log("[garden] camera snippet copied:\n" + snippet);
+          });
+        },
+      };
+      camFolder.add(copyBtn, "copy position");
+      // Horizontal-fov slider — narrower = more telephoto/flatter, wider = more
+      // dramatic. Vertical fov is derived per aspect, so this looks consistent on
+      // the band, mobile, and here. The value rides along in "copy position".
+      camFolder
+        .add(ctx.camera.userData, "hFov", 25, 100, 1)
+        .name("h-fov")
+        .onChange(() => ctx.applyFov());
+      camFolder.add(
+        {
+          "reset view"() {
+            controls.target.copy(home.target);
+            placeFromOrbit(home.target, home.orbit);
+            controls.update();
+          },
+        },
+        "reset view"
+      );
+      camFolder.open();
+
       // ── WASD glide ────────────────────────────────────────────────────────
       const pressed = new Set();
       function onKeyDown(e) {

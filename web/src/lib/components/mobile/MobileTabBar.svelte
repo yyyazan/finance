@@ -11,7 +11,7 @@
   let { tab = $bindable('home') } = $props();
 
   const TABS = [
-    { key: 'home', glyph: '❖', label: 'home' },
+    { key: 'home', glyph: '', label: 'home' },     // home renders an inline sprout SVG
     { key: 'search', glyph: '⌕', label: 'search' },
     { key: 'holdings', glyph: '☰', label: 'holdings' },
     { key: 'log', glyph: '⊞', label: 'log' },
@@ -62,17 +62,31 @@
   {#each TABS as t (t.key)}
     <button class="m-tab" class:on={tab === t.key} onclick={() => (tab = t.key)}
       aria-current={tab === t.key ? 'page' : undefined}>
-      <span class="m-tab-glyph" aria-hidden="true">{t.glyph}</span>
+      {#if t.key === 'home'}
+        <!-- home = a little sprout (currentColor so it inverts to paper when active) -->
+        <svg class="m-tab-glyph m-tab-sprout" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 21 V11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M12 13 C 8.5 13, 6 10.8, 5.6 6.8 C 9.6 7, 11.7 9.4, 12 13 Z" fill="currentColor" />
+          <path d="M12 11 C 15.5 11, 18 8.8, 18.4 4.8 C 14.4 5, 12.3 7.4, 12 11 Z" fill="currentColor" />
+        </svg>
+      {:else}
+        <span class="m-tab-glyph" aria-hidden="true">{t.glyph}</span>
+      {/if}
       <span class="m-tab-label">{t.label}</span>
     </button>
   {/each}
 </nav>
 
 <style>
-  /* iOS stock dock dimensions: 64px capsule, 16px side insets, 12px above the
-     home indicator, pill inset 4px (near-full-height bubble). */
-  .m-dock { position: fixed; left: 16px; right: 16px; bottom: calc(12px + env(safe-area-inset-bottom));
-    z-index: 100; box-sizing: border-box; height: 64px; padding: 4px;
+  /* Mirrors Apple's floating tab bar (iOS Music/News). Geometry from the HIG +
+     measured system metrics:
+       · 49pt bar region → 56px capsule with the floating body
+       · capsule = true pill, radius = height/2 (999px clamps to that)
+       · 16px side margins = the system default content margin
+       · floats just above the 34pt home-indicator zone (8px gap)
+       · 4px pill inset → 48px active bubble (clears Apple's 44pt min target) */
+  .m-dock { position: fixed; left: 16px; right: 16px; bottom: calc(8px + env(safe-area-inset-bottom));
+    z-index: 100; box-sizing: border-box; height: 56px; padding: 4px;
     display: grid; grid-template-columns: repeat(4, 1fr); align-items: stretch;
     /* iOS glass under a brutalist ink line: translucent paper + blur, 1px border */
     background: color-mix(in srgb, var(--paper) 72%, transparent);
@@ -90,7 +104,7 @@
   .m-dock-pill.live { transition: none; }
 
   .m-tab { position: relative; z-index: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 3px;
+    align-items: center; justify-content: center; gap: 2px;
     padding: 0; border: 0; background: transparent; cursor: pointer;
     color: var(--muted); font: inherit; -webkit-user-select: none; user-select: none;
     -webkit-touch-callout: none;
@@ -98,7 +112,9 @@
   .m-tab:active { transform: scale(.94); }
   .m-tab.on { color: var(--paper); }
 
-  .m-tab-glyph { font-size: 20px; line-height: 1; }
+  /* ≈ Apple's 28pt SF Symbol optical size, dialed for our unicode glyphs */
+  .m-tab-glyph { font-size: 24px; line-height: 1; }
+  .m-tab-sprout { width: 23px; height: 23px; display: block; }
   .m-tab.on .m-tab-glyph { animation: m-dock-pop .38s cubic-bezier(.34, 1.56, .5, 1); }
   @keyframes m-dock-pop {
     0% { transform: scale(1); }
@@ -106,8 +122,9 @@
     100% { transform: scale(1); }
   }
 
-  .m-tab-label { font-family: var(--sans); font-size: 9.5px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .08em; }
+  /* Apple tab labels are 10pt SF; ours keep the brutalist mono-caps treatment */
+  .m-tab-label { font-family: var(--sans); font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em; }
 
   @media (prefers-reduced-motion: reduce) {
     .m-dock-pill, .m-tab { transition: none; }

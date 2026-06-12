@@ -31,6 +31,7 @@ export const api = {
   intraday: (t, range) => get('/stock/' + encodeURIComponent(t) + '/intraday?range=' + encodeURIComponent(range)),
   related: (t) => get('/stock/' + encodeURIComponent(t) + '/related'),
   market: () => get('/market'),
+  earnings: () => get('/earnings'),
   watchlist: () => get('/watchlist'),
   watch: (t) => post('/watchlist', { ticker: t }),
   unwatch: (t) => del('/watchlist/' + encodeURIComponent(t)),

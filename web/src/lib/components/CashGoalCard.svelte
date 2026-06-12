@@ -1,5 +1,5 @@
 <script>
-  // Combined Cash + monthly-goal tile (1×1, under the deck). Cash is the headline
+  // Combined Cash + monthly-goal tile (1×1, in the dashboard rail). Cash is the headline
   // figure; the savings goal rides underneath as a slim progress line — denser than
   // two separate single-figure cards, which read half-empty side by side.
   // A little gold coin sits top-right (deposit affordance). Clicking the tile floats a
@@ -146,7 +146,7 @@
     transition: transform .2s cubic-bezier(.34, 1.56, .5, 1); }
   .cashgoal-card:hover .cg-coin { transform: translateY(-2px); }
 
-  /* diagonal shine swipe — same as .portfolio-card, but clipped to the coin face and
+  /* diagonal shine swipe clipped to the coin face,
      triggered by hovering the card. transform-box: view-box so the % resolves in viewBox units. */
   .cg-coin-shine { transform-box: view-box; transform: translateX(-120%); transition: transform .6s ease; }
   .cashgoal-card:hover .cg-coin-shine { transform: translateX(120%); }

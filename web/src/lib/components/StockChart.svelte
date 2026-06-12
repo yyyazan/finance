@@ -9,7 +9,7 @@
   // a deterministic client-side mock (clearly a visual scaffold). Real volume is
   // a backend follow-up; the histogram swaps in transparently once it lands.
   import { onMount } from 'svelte';
-  import { createChart, AreaSeries, CandlestickSeries, LineSeries, HistogramSeries, ColorType, CrosshairMode, LineStyle, TrackingModeExitMode } from 'lightweight-charts';
+  import { createChart, AreaSeries, CandlestickSeries, LineSeries, HistogramSeries, ColorType, CrosshairMode, LineStyle, PriceScaleMode } from 'lightweight-charts';
   import { priceSeries } from '$lib/mockStock.js';
   import { api } from '$lib/api.js';
   import { theme } from '$lib/theme.js';
@@ -38,11 +38,86 @@
   const cfg = $derived(RANGES.find((r) => r.k === range) ?? RANGES[0]);
 
   const TYPE_LABEL = { area: 'Area', candles: 'Candlestick', line: 'Line' };
-  const COMPARES = [
+
+  // ── compare: overlay any tickers on the chart ──
+  // Quick picks + a search box (same /api/search the palette uses). While ≥1
+  // compare is active the right price scale flips to Percentage mode, so every
+  // series is rebased to the window start — the Google Finance read.
+  const QUICK_COMPARES = [
     { sym: 'SPY', label: 'S&P 500' },
     { sym: 'QQQ', label: 'Nasdaq 100' },
     { sym: 'BTC-USD', label: 'Bitcoin' },
   ];
+  const CMP_COLORS = ['#5b8def', '#ff90e8', '#ffc900', '#c994e8', '#ff6e5e'];
+  const CMP_MAX = 4;
+
+  let compares = $state([]);     // [{ sym, label, color }]
+  let cmpData = $state({});      // sym → [{ time, value }] for the current range
+  let cmpQ = $state('');
+  let cmpResults = $state([]);
+  let cmpLoading = $state(false);
+
+  const compared = (sym) => compares.some((c) => c.sym === sym);
+  function toggleCompare(sym, label) {
+    const s = (sym || '').toUpperCase();
+    if (s === (ticker || '').toUpperCase()) return;            // never compare with itself
+    if (compared(s)) { compares = compares.filter((c) => c.sym !== s); return; }
+    if (compares.length >= CMP_MAX) return;
+    const used = new Set(compares.map((c) => c.color));
+    compares = [...compares, { sym: s, label: label ?? s, color: CMP_COLORS.find((c) => !used.has(c)) ?? CMP_COLORS[0] }];
+    cmpQ = '';
+    cmpResults = [];
+  }
+
+  // debounced ticker search for the compare menu (180ms, stale-proof)
+  let cmpSeq = 0, cmpTimer = null;
+  $effect(() => {
+    const q = cmpQ.trim();
+    if (cmpTimer) clearTimeout(cmpTimer);
+    if (!q) { cmpResults = []; cmpLoading = false; return; }
+    cmpLoading = true;
+    const mine = ++cmpSeq;
+    cmpTimer = setTimeout(async () => {
+      try {
+        const r = await api.search(q);
+        if (mine !== cmpSeq) return;
+        cmpResults = (r.results ?? []).slice(0, 6);
+      } catch {
+        if (mine === cmpSeq) cmpResults = [];
+      } finally {
+        if (mine === cmpSeq) cmpLoading = false;
+      }
+    }, 180);
+  });
+
+  // fetch each compared ticker's points for the current range (cached: daily
+  // history once per symbol, intraday once per symbol+feed)
+  const cmpHistCache = new Map();   // sym → Promise<stock payload>
+  const cmpIntraCache = new Map();  // `${sym}:${feed}` → Promise<intraday payload>
+  $effect(() => {
+    const list = compares, c = cfg;
+    if (!list.length) { cmpData = {}; return; }
+    let cancelled = false;
+    (async () => {
+      const out = {};
+      await Promise.all(list.map(async ({ sym }) => {
+        try {
+          if (c.intraday) {
+            const key = sym + ':' + c.intraday;
+            if (!cmpIntraCache.has(key)) cmpIntraCache.set(key, api.intraday(sym, c.intraday));
+            const r = await cmpIntraCache.get(key);
+            out[sym] = (r?.points ?? []).filter((p) => p.c != null).map((p) => ({ time: p.t, value: p.c }));
+          } else {
+            if (!cmpHistCache.has(sym)) cmpHistCache.set(sym, api.stock(sym));
+            const r = await cmpHistCache.get(sym);
+            out[sym] = realSeries(r?.history ?? null, c)?.area ?? [];
+          }
+        } catch { out[sym] = []; }
+      }));
+      if (!cancelled) cmpData = out;
+    })();
+    return () => { cancelled = true; };
+  });
 
   // Real intraday bars for 1D/5D (5m/30m). Daily ranges slice `history`.
   let intra = $state(null);
@@ -141,7 +216,56 @@
   let highlight = null;
   let hover = $state(null);
   let drag = $state(null);
-  function startDrag() { if (hover?.price != null) { drag = { x: hover.x, price: hover.price, time: hover.time }; updateHighlight(); } }
+  // click-drag span measure is a mouse affordance; touch gets the hold-scrub below
+  function startDrag(e) {
+    if (e?.pointerType === 'touch') return;
+    if (hover?.price != null) { drag = { x: hover.x, price: hover.price, time: hover.time }; updateHighlight(); }
+  }
+
+  // ── touch scrub: HOLD (220ms) then DRAG moves the crosshair ──
+  // Deterministic pointer implementation: hold engages, drag scrubs via
+  // setCrosshairPosition (hover/tooltip fed manually), lift clears. A quick
+  // swipe cancels the hold so the page/sheet keeps scrolling naturally.
+  const HOLD_MS = 220, HOLD_SLOP = 8;
+  let wrapEl = $state();
+  let holdTimer = null, scrubbing = false, downAt = null;
+
+  function scrubAt(clientX, clientY) {
+    const arr = data?.area;
+    if (!chart || !series || !arr?.length) return;
+    const r = wrapEl.getBoundingClientRect();
+    const x = Math.min(Math.max(clientX - r.left, 0), r.width);
+    const y = Math.min(Math.max(clientY - r.top, 0), r.height);
+    const lg = chart.timeScale().coordinateToLogical(x);
+    if (lg == null) return;
+    const pt = arr[Math.min(arr.length - 1, Math.max(0, Math.round(lg)))];
+    if (!pt) return;
+    chart.setCrosshairPosition(pt.value, pt.time, series);
+    const sx = chart.timeScale().timeToCoordinate(pt.time);
+    hover = { x: sx ?? x, y, price: pt.value, time: pt.time };
+    updateHighlight();
+  }
+  function endScrub() {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    downAt = null;
+    if (scrubbing) {
+      scrubbing = false;
+      chart?.clearCrosshairPosition();
+      hover = null;
+      updateHighlight();
+    }
+  }
+  function onTouchDown(e) {
+    if (e.pointerType !== 'touch') return;
+    downAt = { x: e.clientX, y: e.clientY };
+    holdTimer = setTimeout(() => { holdTimer = null; scrubbing = true; scrubAt(downAt.x, downAt.y); }, HOLD_MS);
+  }
+  function onTouchMove(e) {
+    if (e.pointerType !== 'touch') return;
+    if (scrubbing) { scrubAt(e.clientX, e.clientY); return; }
+    if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > HOLD_SLOP) endScrub();
+  }
+  function onTouchEnd(e) { if (e.pointerType === 'touch') endScrub(); }
 
   onMount(() => {
     chart = createChart(host, {
@@ -156,9 +280,6 @@
         horzLine: { color: PAL.GRID, width: 1, style: LineStyle.Dotted, labelVisible: false },
       },
       handleScroll: false, handleScale: false,
-      // touch: press-drag scrubs the crosshair (drag-measure rides the same
-      // pointer events); window stays fixed — the range pills own it
-      trackingMode: { exitMode: TrackingModeExitMode.OnNextTap },
     });
     highlight = chart.addSeries(AreaSeries, {
       lineColor: 'rgba(0,0,0,0)', lineWidth: 1, topColor: hexA(PAL.INK, 0.08), bottomColor: hexA(PAL.INK, 0.08),
@@ -210,7 +331,8 @@
       });
       series.setData(d.area);
     }
-    if (d.prevClose != null) {
+    // a raw-$ reference line is meaningless on the % compare scale
+    if (d.prevClose != null && !compares.length) {
       series.createPriceLine({ price: d.prevClose, color: PAL.MUTED, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'prev close' });
     }
     chart.timeScale().fitContent();
@@ -237,6 +359,28 @@
     if (!want200 && sma200Series) { chart.removeSeries(sma200Series); sma200Series = null; }
     if (sma50Series) sma50Series.setData(smaSeries(area, 50));
     if (sma200Series) sma200Series.setData(smaSeries(area, 200));
+  });
+
+  // compare overlays — one line per compared ticker, % scale while any active
+  let cmpSeriesMap = new Map();   // sym → ISeriesApi
+  $effect(() => {
+    if (!chart) return;
+    const list = compares, dataMap = cmpData;
+    for (const [sym, s] of [...cmpSeriesMap]) {
+      if (!list.some((c) => c.sym === sym)) { chart.removeSeries(s); cmpSeriesMap.delete(sym); }
+    }
+    for (const c of list) {
+      if (!cmpSeriesMap.has(c.sym)) {
+        cmpSeriesMap.set(c.sym, chart.addSeries(LineSeries, {
+          color: c.color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        }));
+      }
+      cmpSeriesMap.get(c.sym).setData(dataMap[c.sym] ?? []);
+    }
+    // % mode rebases every series to the window start so overlays are comparable
+    chart.priceScale('right').applyOptions({ mode: list.length ? PriceScaleMode.Percentage : PriceScaleMode.Normal });
+    chart.timeScale().fitContent();
   });
 
   let updatingHl = false;
@@ -286,14 +430,40 @@
     </div>
 
     <div class="gf-tool">
-      <button class="gf-btn" class:active={openMenu === 'compare'} onclick={() => toggleMenu('compare')}>
-        <span class="gf-ic" aria-hidden="true">⇄</span>Compare<span class="gf-cv" aria-hidden="true">▾</span>
+      <button class="gf-btn" class:active={openMenu === 'compare' || compares.length > 0} onclick={() => toggleMenu('compare')}>
+        <span class="gf-ic" aria-hidden="true">⇄</span>Compare{#if compares.length}<span class="gf-count">{compares.length}</span>{/if}<span class="gf-cv" aria-hidden="true">▾</span>
       </button>
       {#if openMenu === 'compare'}
-        <div class="gf-menu gf-menu-wide">
-          {#each COMPARES as c}
-            <button class="gf-item gf-item-soon" disabled>{c.label} <span class="gf-sym">{c.sym}</span><span class="gf-soon">soon</span></button>
-          {/each}
+        <div class="gf-menu gf-menu-cmp">
+          <input class="gf-cmp-input" type="text" placeholder="Search any stock or ETF…"
+            bind:value={cmpQ}
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+          {#if cmpQ.trim()}
+            {#if cmpLoading}
+              <div class="gf-cmp-note">searching…</div>
+            {:else if cmpResults.length === 0}
+              <div class="gf-cmp-note">no matches</div>
+            {:else}
+              {#each cmpResults as r (r.symbol)}
+                <button class="gf-item" class:sel={compared((r.symbol || '').toUpperCase())}
+                  onclick={() => toggleCompare(r.symbol, r.name)}>
+                  <span class="gf-check">{compared((r.symbol || '').toUpperCase()) ? '✓' : ''}</span>
+                  <span class="gf-cmp-name">{r.name}</span><span class="gf-sym">{r.symbol}</span>
+                </button>
+              {/each}
+            {/if}
+          {:else}
+            {#each QUICK_COMPARES as c (c.sym)}
+              <button class="gf-item" class:sel={compared(c.sym)} onclick={() => toggleCompare(c.sym, c.label)}>
+                <span class="gf-check">{compared(c.sym) ? '✓' : ''}</span>{c.label}<span class="gf-sym">{c.sym}</span>
+              </button>
+            {/each}
+            {#each compares.filter((c) => !QUICK_COMPARES.some((q) => q.sym === c.sym)) as c (c.sym)}
+              <button class="gf-item sel" onclick={() => toggleCompare(c.sym)}>
+                <span class="gf-check">✓</span><span class="gf-cmp-name">{c.label}</span><span class="gf-sym">{c.sym}</span>
+              </button>
+            {/each}
+          {/if}
         </div>
       {/if}
     </div>
@@ -312,10 +482,24 @@
     </div>
   </div>
 
+  <!-- active compares — removable legend chips, dot = series colour -->
+  {#if compares.length}
+    <div class="gf-cmps">
+      <span class="gf-chip gf-chip-self"><span class="gf-dot" style="background:{BRAND}"></span>{ticker}</span>
+      {#each compares as c (c.sym)}
+        <button class="gf-chip" onclick={() => toggleCompare(c.sym)} title="Remove {c.sym}">
+          <span class="gf-dot" style="background:{c.color}"></span>{c.sym}<span class="gf-x" aria-hidden="true">✕</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
+
   <!-- chart -->
-  <div class="sc-chartwrap" onpointerdown={startDrag}>
+  <div class="sc-chartwrap" bind:this={wrapEl}
+    onpointerdown={(e) => { startDrag(e); onTouchDown(e); }}
+    onpointermove={onTouchMove} onpointerup={onTouchEnd} onpointercancel={onTouchEnd}>
     <div class="sc-chart" bind:this={host}></div>
-    {#if data.prevClose != null}
+    {#if data.prevClose != null && !compares.length}
       <div class="sc-prev">prev close <b>${f(data.prevClose)}</b></div>
     {/if}
     {#if drag}<div class="sc-anchor" style="left:{drag.x}px"></div>{/if}
@@ -373,9 +557,30 @@
   .gf-item.sel { font-weight: 700; }
   .gf-check { flex: 0 0 14px; font-size: 12px; color: var(--brand); }
   .gf-sym { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--muted); }
-  .gf-item-soon { cursor: default; color: var(--muted); }
-  .gf-soon { margin-left: 8px; font-family: var(--mono); font-size: 8px; text-transform: uppercase; letter-spacing: .1em;
-    padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent); border-radius: 999px; }
+  /* compare menu: search box on top, results / quick picks under it */
+  .gf-menu-cmp { min-width: 230px; }
+  .gf-cmp-input { box-sizing: border-box; width: 100%; margin-bottom: 4px; padding: 7px 9px;
+    border: var(--bw) solid var(--hairline); border-radius: 6px; outline: none; background: transparent;
+    font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .gf-cmp-input:focus { border-color: var(--ink); }
+  .gf-cmp-input::placeholder { color: var(--muted); font-weight: 500; }
+  .gf-cmp-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gf-cmp-note { padding: 7px 9px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .gf-count { font-family: var(--mono); font-size: 10px; font-weight: 700; line-height: 1;
+    padding: 2px 6px; border-radius: 999px; background: var(--paper); color: var(--ink);
+    border: 1px solid currentColor; }
+  /* iOS focus-zoom guard for the in-menu search */
+  @media (max-width: 700px) { .gf-cmp-input { font-size: 16px; } }
+
+  /* active-compare chips under the toolbar */
+  .gf-cmps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 0 0 auto; }
+  .gf-chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--ink);
+    padding: 3px 9px; background: transparent; border: var(--bw) solid var(--hairline); border-radius: 999px; }
+  .gf-chip:hover { border-color: var(--ink); }
+  .gf-chip-self { cursor: default; color: var(--muted); }
+  .gf-dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--ink); flex: 0 0 auto; }
+  .gf-x { font-size: 9px; opacity: .6; }
 
   /* chart */
   .sc-chartwrap { flex: 1 1 auto; min-height: 200px; position: relative; user-select: none; touch-action: none; }

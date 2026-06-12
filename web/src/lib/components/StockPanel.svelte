@@ -3,9 +3,9 @@
   // language. Strict 4-column grid, canvas showing through the gaps: header
   // (4×0.5: crumb + back top-right, name/quote, position-or-watch) → chart (4×2)
   // → key stats (4×1, three columns) → analyst outlook (two BARE centred cells:
-  // ratings RingGauge | forecast bars) → related stocks (4 × 1×1 cards). News is
-  // intentionally omitted. Chrome-less so the dashboard stage and the modal both
-  // render this grid directly on the page.
+  // ratings RingGauge | forecast bars) → news (4×1, sentiment-dotted headlines)
+  // → related stocks (4 × 1×1 cards). Chrome-less so the dashboard stage and
+  // the modal both render this grid directly on the page.
   import { onMount } from 'svelte';
   import StockChart from './StockChart.svelte';
   import RingGauge from './RingGauge.svelte';
@@ -132,6 +132,24 @@
   const dayAbs = $derived(
     stock.prevClose && stock.price ? stock.price - stock.prevClose : null
   );
+  // ── headline sentiment — crude keyword scan driving the news dots (green /
+  // yellow / red). SWAP POINT: replace with a real sentiment score on the
+  // /api/stock news items; the 'pos'|'neu'|'neg' contract stays. ──
+  const SENT_POS = /\b(beats?|surges?|soars?|jumps?|rall(?:y|ies)|record|upgrades?|outperforms?|gains?|rises?|tops?|strong|bullish|growth|profits?|wins?|climbs?|boosts?)\b/i;
+  const SENT_NEG = /\b(miss(?:es)?|falls?|drops?|plunges?|sinks?|slumps?|downgrades?|underperforms?|lawsuits?|probes?|cuts?|layoffs?|weak|bearish|loss(?:es)?|warns?|recalls?|fraud|crash(?:es)?|tumbles?|slides?|fears?)\b/i;
+  function sentimentOf(title) {
+    const p = SENT_POS.test(title ?? ''), n = SENT_NEG.test(title ?? '');
+    return p && !n ? 'pos' : n && !p ? 'neg' : 'neu';
+  }
+  const SENT_LABEL = { pos: 'positive', neu: 'neutral', neg: 'negative' };
+  const ago = (at) => {
+    if (at == null) return '';
+    const s = Date.now() / 1000 - at;
+    if (s < 3600) return Math.max(1, Math.round(s / 60)) + 'm';
+    if (s < 86400) return Math.round(s / 3600) + 'h';
+    return Math.round(s / 86400) + 'd';
+  };
+
   const fmtEarn = (iso) => {
     if (!iso) return '—';
     const d = new Date(iso + 'T00:00:00');
@@ -229,11 +247,6 @@
           ]}
           idle={{ tag: 'ratings', hero: verdict ?? '—', sub: analyst.count ? `${analyst.count} analysts · 3 mo` : null,
             heroColor: verdictTone === 'up' ? 'var(--gain)' : verdictTone === 'down' ? 'var(--loss)' : 'var(--ink)' }} />
-        <div class="rate-legend">
-          <div class="rl-row"><span class="rl-dot" style="background:var(--gain)"></span><span class="rl-k">buy</span><b>{ratingSegs.buy}</b></div>
-          <div class="rl-row"><span class="rl-dot" style="background:var(--yellow)"></span><span class="rl-k">hold</span><b>{ratingSegs.hold}</b></div>
-          <div class="rl-row"><span class="rl-dot" style="background:var(--loss)"></span><span class="rl-k">sell</span><b>{ratingSegs.sell}</b></div>
-        </div>
       </section>
     {/if}
     {#if forecast}
@@ -256,6 +269,26 @@
         </div>
       </section>
     {/if}
+  {/if}
+
+  <!-- news — full-width headline list; the dot is the sentiment read
+       (green = positive · yellow = neutral · red = negative, keyword heuristic) -->
+  {#if remote?.news?.length}
+    <section class="w w-news">
+      <div class="w-h">news<span class="w-h-sub">{ticker}</span></div>
+      <div class="nw-list">
+        {#each remote.news as n (n.url ?? n.title)}
+          {@const s = sentimentOf(n.title)}
+          <a class="nw-row" href={n.url} target="_blank" rel="noopener noreferrer">
+            <span class="nw-dot nw-{s}" title="{SENT_LABEL[s]} sentiment"></span>
+            <span class="nw-body">
+              <span class="nw-title">{n.title}</span>
+              <span class="nw-meta">{n.source}{#if n.at} · {ago(n.at)} ago{/if}</span>
+            </span>
+          </a>
+        {/each}
+      </div>
+    </section>
   {/if}
 
   <!-- related stocks — 4 standalone 1×1 cards -->
@@ -339,16 +372,12 @@
   .g-row b { font-family: var(--mono); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* analyst outlook — two BORDERLESS cells (span 2 each), centred like the
-     dashboard's chrome-less ring row */
+  /* analyst outlook — two BORDERLESS cells (span 2 each); ring and forecast
+     each sit dead-centre in their cell (no legend — the ring's segments +
+     hover core carry the buy/hold/sell read) */
   .w-bare { grid-column: span 2; min-height: 188px; display: flex; align-items: center;
-    justify-content: center; gap: 22px; padding: 6px 8px; }
+    justify-content: center; padding: 6px 8px; }
   .w-ratings :global(.rgx) { height: auto; }
-  .rate-legend { flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px; min-width: 96px; }
-  .rl-row { display: flex; align-items: center; gap: 9px; }
-  .rl-dot { width: 10px; height: 10px; border-radius: 3px; border: var(--bw) solid var(--ink); flex: 0 0 auto; }
-  .rl-k { font-family: var(--sans); font-size: 12px; font-weight: 700; text-transform: capitalize; color: var(--ink); }
-  .rl-row b { margin-left: auto; font-family: var(--mono); font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
   .fc-h { grid-column: 1 / -1; font-family: var(--sans); font-size: 10px; font-weight: 700;
     text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-bottom: 2px; }
@@ -368,6 +397,27 @@
     border-left: 1.5px dashed color-mix(in srgb, var(--ink) 40%, transparent); pointer-events: none; }
   .fc-cur-pill { position: relative; font-family: var(--mono); font-size: 10px; font-weight: 700; white-space: nowrap;
     color: var(--ink); background: var(--paper); border: var(--bw) solid var(--ink); border-radius: 999px; padding: 2px 8px; }
+
+  /* news widget — 4×1; headline rows split by hairlines, sentiment dot leads.
+     Link styling matches MarketPulse: always underlined, ink on hover. */
+  .w-news { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; padding: 12px 16px 6px; }
+  .nw-list { display: flex; flex-direction: column; }
+  .nw-row { display: flex; align-items: flex-start; gap: 11px; padding: 9px 0 10px;
+    border-top: var(--bw) solid var(--hairline); text-decoration: none; }
+  .nw-row:first-child { border-top: 0; }
+  .nw-dot { flex: 0 0 auto; width: 9px; height: 9px; margin-top: 4px; border-radius: 50%;
+    border: var(--bw) solid var(--ink); }
+  .nw-pos { background: var(--gain); }
+  .nw-neu { background: var(--yellow); }
+  .nw-neg { background: var(--loss); }
+  .nw-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .nw-title { font-family: var(--sans); font-size: 12.5px; font-weight: 600; line-height: 1.4; color: var(--ink);
+    text-decoration: underline; text-underline-offset: 2.5px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 30%, transparent);
+    transition: text-decoration-color .15s ease;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .nw-row:hover .nw-title { text-decoration-color: var(--ink); }
+  .nw-meta { font-family: var(--mono); font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 
   /* related stock cards — 1 × 1 each */
   .rel-card { grid-column: span 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;

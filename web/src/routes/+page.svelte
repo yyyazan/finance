@@ -3,12 +3,11 @@
   import { api } from '$lib/api.js';
   import KpiCard from '$lib/components/KpiCard.svelte';
   import CashGoalCard from '$lib/components/CashGoalCard.svelte';
-  import DividendWraith from '$lib/components/DividendWraith.svelte';
+  import DividendRing from '$lib/components/DividendRing.svelte';
   import AllocationRing from '$lib/components/AllocationRing.svelte';
   import DashboardStage from '$lib/components/DashboardStage.svelte';
   import MarketPulse from '$lib/components/MarketPulse.svelte';
   import TradeTicket from '$lib/components/TradeTicket.svelte';
-  import ResearchChat from '$lib/components/ResearchChat.svelte';
   import GardenView from '$lib/components/GardenView.svelte';
   import MobileDashboard from '$lib/components/mobile/MobileDashboard.svelte';
   import { primeHoldings } from '$lib/stores.js';
@@ -69,15 +68,17 @@
           onSaved={refresh} />
         <TradeTicket onSaved={refresh} />
         <div class="rail-duo rail-bare">
-          <DividendWraith data={d.dividends} holdings={d.cards} />
+          <DividendRing data={d.dividends} holdings={d.cards} />
           <AllocationRing holdings={d.cards.filter((c) => !c.is_joker)} />
         </div>
         <MarketPulse />
       </aside>
 
-      <!-- rightmost column: mock research chat -->
-      <aside class="dash-templates">
-        <ResearchChat />
+      <!-- template column (absolute right) — empty widget slots, contents TBD -->
+      <aside class="dash-templates" aria-hidden="true">
+        {#each { length: 4 } as _, i (i)}
+          <div class="tmpl-slot">+ tbd</div>
+        {/each}
       </aside>
     </div>
   </div>
@@ -87,13 +88,21 @@
 {/if}
 
 <style>
-  /* stage : rail : chat = 2 : 1 : 1 (stage one unit narrower than before) */
+  /* stage : rail : templates = 2 : 1 : 0.7 */
   /* --stage-h = title card (--title-h) + gap (16) + chart box (440); keeps the
      portfolio stage the exact height of the stock view's header + chart stack */
   .dash { --stage-h: calc(var(--title-h) + 16px + 440px); display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr) minmax(240px, 1fr);
+    grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr) minmax(180px, 0.7fr);
     gap: 16px; align-items: start; }
   .dash > :global(.stage) { min-height: var(--stage-h); }
+
+  /* template column — dashed empty slots waiting for their widgets; drops away
+     first when the viewport tightens */
+  .dash-templates { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .tmpl-slot { height: var(--title-h); display: grid; place-items: center;
+    border: var(--bw) dashed var(--muted); border-radius: var(--r); color: var(--muted);
+    font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    opacity: .7; }
 
   .dash-rail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   .rail-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -104,11 +113,8 @@
   /* dividends + allocation: intentionally chrome-less, side by side */
   .rail-bare { align-items: center; }
 
-  /* rightmost column — mock research chat */
-  .dash-templates { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-
+  /* template column drops first; stage + rail keep the 2:1 split */
   @media (max-width: 1280px) {
-    /* drop the template column first; keep stage + rail at 2 : 1 */
     .dash { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
     .dash-templates { display: none; }
   }

@@ -1,23 +1,25 @@
 <script>
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
   import GardenView from '$lib/components/GardenView.svelte';
 
   let garden = $state(null);
   let error = $state(null);
   let period = $state('afternoon');
-  // Constrain the stage to the dashboard band's proportions to preview framing.
-  let bandRatio = $state(false);
+
+  // Frame guides: overlay both dashboard aspect ratios at once so you can compose
+  // for desktop + mobile without toggling. The camera's vertical FOV is fixed, so
+  // these are aspect-ratio SAFE-FRAMES (think game-dev safe zones), not literal
+  // pixel crops — the real bands reveal more horizontal scene than the debug view.
+  let guides = $state(false);
+  const GUIDE_W = 0.78; // both frames share this fraction of the stage width
+  const DESKTOP_ASPECT = 5.3; // wide, short dashboard band (≈ content-width / 230)
+  const MOBILE_ASPECT = 390 / 180; // phone hero (390 × 180)
+
+  let stageW = $state(0);
+  let fw = $derived(Math.round(stageW * GUIDE_W));
 
   const PERIODS = ['morning', 'afternoon', 'evening', 'night'];
-
-  // Toggle the stage size, then nudge a resize so the garden recomputes its
-  // camera aspect / renderer size from the new box (keeps the camera in place).
-  async function toggleBandRatio() {
-    bandRatio = !bandRatio;
-    await tick();
-    window.dispatchEvent(new Event('resize'));
-  }
 
   onMount(async () => {
     try {
@@ -35,10 +37,19 @@
   {:else if garden}
     <!-- Re-key on period so switching time-of-day cleanly remounts the scene
          (teardown + fresh initGarden); the VOX cache makes the remount instant. -->
-    <div class="garden-stage" class:garden-stage--band={bandRatio}>
+    <div class="garden-stage" bind:clientWidth={stageW}>
       {#key period}
         <GardenView debug positions={garden.positions} period={period} />
       {/key}
+      {#if guides && fw}
+        <!-- Taller (mobile) drawn first so the shorter desktop strip reads on top. -->
+        <div class="frame-guide frame-guide--mobile" style="width:{fw}px;height:{Math.round(fw / MOBILE_ASPECT)}px">
+          <span class="frame-guide__tag">mobile · 390×180</span>
+        </div>
+        <div class="frame-guide frame-guide--desktop" style="width:{fw}px;height:{Math.round(fw / DESKTOP_ASPECT)}px">
+          <span class="frame-guide__tag">desktop band</span>
+        </div>
+      {/if}
     </div>
 
     <!-- Debug HUD -->
@@ -55,9 +66,9 @@
       </div>
       <button
         class="garden-debug__btn"
-        class:is-active={bandRatio}
-        onclick={toggleBandRatio}
-      >dashboard ratio</button>
+        class:is-active={guides}
+        onclick={() => (guides = !guides)}
+      >frame guides</button>
       <span class="garden-debug__hint">
         WASD move (⇧ fast) · left-drag rotate · right-drag pan · scroll zoom · click plant + G/E/R gizmo
       </span>
@@ -76,16 +87,34 @@
     overflow: hidden;
   }
 
-  /* The garden lives in a stage so we can swap full-viewport ↔ dashboard band. */
+  /* The garden fills the stage; frame guides overlay on top when toggled. */
   .garden-stage { position: absolute; inset: 0; }
-  /* Match the dashboard band: full width × clamp(180,23vw,230) tall, centered,
-     with a hairline so the band edges are visible against the page bg. */
-  .garden-stage--band {
-    inset: auto 0 auto 0;
+
+  /* Aspect-ratio safe-frames — both share a width and centre, so the desktop
+     band reads as a short wide strip nested inside the taller mobile box. */
+  .frame-guide {
+    position: absolute;
     top: 50%;
-    height: clamp(180px, 23vw, 230px);
-    transform: translateY(-50%);
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border: 2px dashed currentColor;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 5;
+    color: rgba(20, 20, 20, 0.55);
+  }
+  .frame-guide--mobile { color: rgba(40, 90, 160, 0.85); }
+  .frame-guide--desktop { color: rgba(190, 70, 40, 0.9); }
+  .frame-guide__tag {
+    position: absolute;
+    top: -19px;
+    left: -2px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.72);
+    color: currentColor;
+    font: 600 11px var(--sans, sans-serif);
+    white-space: nowrap;
   }
 
   .garden-debug__msg {

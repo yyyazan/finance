@@ -14,7 +14,9 @@ from datetime import datetime, timezone
 import yfinance as yf
 from fastapi import APIRouter, Query
 
+from portfolio.data import db as db_mod
 from portfolio.data import prices as prices_mod
+from api import state
 from api.serialize import _py
 
 router = APIRouter(prefix="/api", tags=["stock"])
@@ -216,6 +218,40 @@ def _earnings_date(info: dict) -> str | None:
         return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
     except Exception:
         return None
+
+
+_EARNINGS_TTL = 1800.0  # rides _info's cache anyway; this skips the loop
+_earnings_cache: tuple[float, dict] | None = None
+
+
+@router.get("/earnings")
+def earnings(user_id: int = db_mod.DEFAULT_USER_ID):
+    """Upcoming earnings across the portfolio's holdings — the dashboard's
+    earnings widget. Soonest scheduled dates first (today counts as upcoming);
+    holdings whose next date isn't published yet fall back to their most
+    recent report, flagged `past` so the UI can grey them out. Capped at 6."""
+    global _earnings_cache
+    now = time.time()
+    if _earnings_cache is not None and now - _earnings_cache[0] < _EARNINGS_TTL:
+        return _earnings_cache[1]
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    rows: list[dict] = []
+    for c in state.get_snapshot(user_id).cards:
+        if c.get("is_joker"):
+            continue
+        t = str(c.get("ticker") or "").upper()
+        if not t:
+            continue
+        d = _earnings_date(_info(t))
+        if d:
+            rows.append({"ticker": t, "name": c.get("company_name") or t, "date": d, "past": d < today})
+
+    upcoming = sorted((r for r in rows if not r["past"]), key=lambda r: r["date"])
+    past = sorted((r for r in rows if r["past"]), key=lambda r: r["date"], reverse=True)
+    payload = {"items": (upcoming + past)[:6]}
+    _earnings_cache = (now, payload)
+    return payload
 
 
 @router.get("/stock/{ticker}")

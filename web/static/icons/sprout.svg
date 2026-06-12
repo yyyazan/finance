@@ -1,15 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Sprout app icon — neo-brutalist: dark canvas, jade seedling, warm-white
-       1px-language strokes scaled up for icon legibility. -->
-  <rect width="512" height="512" fill="#0d0c0a"/>
-  <!-- soil line -->
-  <line x1="120" y1="392" x2="392" y2="392" stroke="#faf7f0" stroke-width="14" stroke-linecap="round"/>
-  <!-- stem -->
-  <path d="M256 392 V232" stroke="#0fb39a" stroke-width="22" stroke-linecap="round" fill="none"/>
-  <!-- left leaf -->
-  <path d="M256 300 C 200 300, 152 268, 148 204 C 212 208, 252 244, 256 300 Z"
-        fill="#0fb39a" stroke="#faf7f0" stroke-width="10" stroke-linejoin="round"/>
-  <!-- right leaf -->
-  <path d="M256 252 C 312 252, 360 220, 364 156 C 300 160, 260 196, 256 252 Z"
-        fill="#23a094" stroke="#faf7f0" stroke-width="10" stroke-linejoin="round"/>
+  <!-- Sprout app icon v3 — neo-brutalist + cutesy: a chunky potted seedling.
+       Web variant: TRANSPARENT background. Blocky, single-jade leaves (no
+       gradients, no white glints), fat ink outlines, one hard jade offset
+       shadow, dot eyes + smile + blush on the pot. -->
+
+  <!-- hard offset shadow (whole character, jade, straight down-right) -->
+  <g transform="translate(16 16)" fill="#0a7d6b">
+    <rect x="148" y="290" width="216" height="46" rx="12"/>
+    <path d="M178 336 h156 l-16 104 q-2 16 -18 16 h-88 q-16 0 -18 -16 Z"/>
+  </g>
+
+  <!-- stem (ink casing → jade core) -->
+  <path d="M256 296 V178" stroke="#1a1a1a" stroke-width="34" stroke-linecap="round" fill="none"/>
+  <path d="M256 296 V178" stroke="#0fb39a" stroke-width="16" stroke-linecap="round" fill="none"/>
+
+  <!-- leaves: two blocky faceted leaves, all jade (jade outline, no ink) -->
+  <path d="M254 210 L206 206 L162 192 L140 162 L138 130 L172 122 L210 134 L240 164 L252 192 Z"
+        fill="#0fb39a" stroke="#0fb39a" stroke-width="14"/>
+  <path d="M258 180 L306 176 L350 162 L372 132 L374 100 L340 92 L302 104 L272 134 L258 162 Z"
+        fill="#0fb39a" stroke="#0fb39a" stroke-width="14"/>
+
+  <!-- pot: cream rim + tapered body, fat ink outlines -->
+  <path d="M178 336 h156 l-16 104 q-2 16 -18 16 h-88 q-16 0 -18 -16 Z"
+        fill="#faf7f0" stroke="#1a1a1a" stroke-width="14" stroke-linejoin="round"/>
+  <rect x="148" y="290" width="216" height="46" rx="12"
+        fill="#faf7f0" stroke="#1a1a1a" stroke-width="14"/>
+
+  <!-- face: dot eyes, smile, blush -->
+  <circle cx="222" cy="384" r="11" fill="#1a1a1a"/>
+  <circle cx="290" cy="384" r="11" fill="#1a1a1a"/>
+  <path d="M236 404 Q256 438 276 404" stroke="#1a1a1a" stroke-width="11" stroke-linecap="round" fill="none"/>
+  <circle cx="198" cy="404" r="10" fill="#ff90e8"/>
+  <circle cx="314" cy="404" r="10" fill="#ff90e8"/>
 </svg>

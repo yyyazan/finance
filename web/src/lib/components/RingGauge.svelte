@@ -10,7 +10,7 @@
   // idle: { tag, hero, per?, sub? } — the core at rest.
   let { segments = [], idle = {}, heroSize = 30, size = '168px', minH = '132px' } = $props();
 
-  // ── geometry (viewBox 0..120) — ported from the original Dividend Wraith ──
+  // ── geometry (viewBox 0..120) — ported from the original Dividend Ring ──
   const CX = 60, CY = 60, R = 47, SW = 10;
   const RI = R - SW / 2, RO = R + SW / 2;
   const CR = 2.5;

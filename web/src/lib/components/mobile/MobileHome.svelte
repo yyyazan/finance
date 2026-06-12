@@ -5,7 +5,7 @@
   import GardenView from '../GardenView.svelte';
   import KpiCard from '../KpiCard.svelte';
   import PortfolioChart from '../PortfolioChart.svelte';
-  import DividendWraith from '../DividendWraith.svelte';
+  import DividendRing from '../DividendRing.svelte';
   import AllocationRing from '../AllocationRing.svelte';
   import MarketPulse from '../MarketPulse.svelte';
   import { theme, toggleTheme } from '$lib/theme.js';
@@ -36,7 +36,7 @@
 </div>
 
 <div class="mh-rings">
-  <DividendWraith data={d.dividends} holdings={d.cards} />
+  <DividendRing data={d.dividends} holdings={d.cards} />
   <AllocationRing holdings={d.cards.filter((c) => !c.is_joker)} />
 </div>
 
@@ -57,11 +57,11 @@
   .mh-kpis :global(.glass-card) { padding: 14px 16px; }
 
   /* PortfolioChart is built for the desktop stage (split header row, fixed
-     --title-h, 440px chart). Phone overrides: single header, no empty half,
-     self-sized header, shorter chart box. */
+     --title-h, 440px chart). Phone overrides: single header (the earnings half
+     stays desktop-only), self-sized header, shorter chart box. */
   .mh-chart { margin-bottom: 14px; }
   .mh-chart :global(.pc-head-row) { grid-template-columns: 1fr; gap: 0; }
-  .mh-chart :global(.pc-head-empty) { display: none; }
+  .mh-chart :global(.pc-head-earn) { display: none; }
   .mh-chart :global(.pc-head-w) { height: auto; min-height: 0; }
   .mh-chart :global(.pc-chart-w) { flex-basis: 300px; height: 300px; }
 

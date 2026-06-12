@@ -9,7 +9,12 @@
 
 import * as THREE from "three";
 import { VOXLoader, VOXMesh } from "three/addons/loaders/VOXLoader.js";
-import { GOOD_PLANT_MODELS, PLANT_SCALE, PLANT_SPACING } from "../constants.js";
+import {
+  GOOD_PLANT_MODELS,
+  PLANT_SCALE,
+  PLANT_SLOTS,
+  ALLOC_SCALE,
+} from "../constants.js";
 
 // Module-level cache: parse Plants.vox ONCE, reuse across scene rebuilds.
 // Queued callbacks fire when ready. Never disposed — survives remounts.
@@ -92,6 +97,18 @@ function loadPlant(position, chunks) {
   return mesh;
 }
 
+// Allocation (position_pct, 0–100) → holder scale multiplier. Relative to the
+// largest holding in the current set so the biggest plant is always ALLOC_SCALE[1]
+// and the rest scale down from there; sqrt lifts small holdings off the floor so
+// they stay visible rather than shrinking to nothing.
+function allocScaler(positions) {
+  const maxW = Math.max(0.0001, ...positions.map((p) => +p.position_pct || 0));
+  return function (pos) {
+    const t = Math.sqrt(Math.min(1, (+pos.position_pct || 0) / maxW));
+    return ALLOC_SCALE[0] + t * (ALLOC_SCALE[1] - ALLOC_SCALE[0]);
+  };
+}
+
 export default function createPlants() {
   return {
     name: "plants",
@@ -101,14 +118,29 @@ export default function createPlants() {
       withVoxChunks(function (chunks) {
         if (!ctx.alive) return; // unmounted while the VOX parse was in flight
         if (!chunks || !chunks.length) return;
-        const n = positions.length;
-        const totalW = (n - 1) * PLANT_SPACING;
-        for (let i = 0; i < n; i++) {
+
+        // Biggest allocation first → fills the prime front-centre slots in order.
+        const sorted = [...positions].sort(
+          (a, b) => (+b.position_pct || 0) - (+a.position_pct || 0)
+        );
+        const scaleFor = allocScaler(sorted);
+        if (sorted.length > PLANT_SLOTS.length) {
+          console.warn(
+            `[garden] ${sorted.length} holdings but only ${PLANT_SLOTS.length} slots — ` +
+              "wrapping (overlaps possible). Add more PLANT_SLOTS."
+          );
+        }
+
+        for (let i = 0; i < sorted.length; i++) {
+          const slot = PLANT_SLOTS[i % PLANT_SLOTS.length];
           const holder = new THREE.Group();
-          holder.add(loadPlant(positions[i], chunks));
-          holder.position.set(-totalW / 2 + i * PLANT_SPACING, 0, 0);
+          holder.add(loadPlant(sorted[i], chunks));
+          holder.position.set(slot.x, 0, slot.z);
+          holder.rotation.y = slot.rot || 0;
+          holder.scale.setScalar(scaleFor(sorted[i]));
           holder.name = "plant";
-          holder.userData.position = positions[i]; // for hover/click later
+          holder.userData.position = sorted[i]; // for hover/click later
+          holder.userData.slotIndex = i; // editor reads this for "Copy PLANT_SLOTS"
           holder.userData.baseY = 0;
           ctx.scene.add(holder);
           ctx.plants.push(holder);

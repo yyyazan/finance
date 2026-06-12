@@ -47,8 +47,10 @@ export default function createGround() {
     name: "ground",
     build(ctx) {
       // ── Garden bed ──────────────────────────────────────────────────────
+      // 80×32 — doubled from 40×16 so the green fills the wide (fov 90) frame and
+      // the bed edge stays well outside view.
       const bed = new THREE.Mesh(
-        new THREE.PlaneGeometry(40, 16),
+        new THREE.PlaneGeometry(80, 32),
         new THREE.MeshStandardMaterial({
           color: 0xb8c294, // soft sage soil — distinct from page bg, still gentle
           roughness: 0.95,

@@ -6,8 +6,9 @@
   // both to time-weighted % from the window start. Range buttons zoom the window;
   // the crosshair re-reads the big header number + delta to the hovered point.
   import { onMount } from 'svelte';
-  import { createChart, AreaSeries, LineSeries, ColorType, CrosshairMode, LineStyle, TrackingModeExitMode } from 'lightweight-charts';
+  import { createChart, AreaSeries, LineSeries, ColorType, CrosshairMode, LineStyle, PriceScaleMode } from 'lightweight-charts';
   import { theme } from '$lib/theme.js';
+  import { api } from '$lib/api.js';
 
   // equity = {x:['YYYY-MM-DD'...], y:[$...]} portfolio value
   // spy    = {x,y} parallel SPY portfolio ($) — same cash flows invested in SPY
@@ -32,10 +33,81 @@
   let range = $state('ALL');
   let mode = $state('value');     // 'value' | 'return'
   let chartType = $state('area'); // 'area' | 'line' — render of the value series
-  let benchmark = $state(true);   // show the SPY overlay line
   let openMenu = $state(null);    // 'type' | 'compare' | null — toolbar dropdowns
   let hoverRow = $state(null);    // aligned row under the crosshair, or null at rest
   const toggleMenu = (m) => (openMenu = openMenu === m ? null : m);
+
+  // ── benchmark compare — same framework as the stock view's compare ──
+  // Add any number of tickers as benchmarks. When ≥1 is active the chart flips
+  // to a rebased-% comparison: portfolio shows its time-weighted return, each
+  // benchmark shows its price % — all rebased to the window start (the honest
+  // apples-to-apples read), so Value/Return is set aside while comparing.
+  const QUICK_BMS = [
+    { sym: 'SPY', label: 'S&P 500' },
+    { sym: 'QQQ', label: 'Nasdaq 100' },
+    { sym: 'BTC-USD', label: 'Bitcoin' },
+  ];
+  const BM_COLORS = ['#5b8def', '#ff90e8', '#ffc900', '#c994e8', '#ff6e5e'];
+  const BM_MAX = 4;
+
+  let benchmarks = $state([]);   // [{ sym, label, color }]
+  let bmHist = $state({});       // sym → [{ t, c }] raw daily closes
+  let bmQ = $state('');
+  let bmResults = $state([]);
+  let bmLoading = $state(false);
+  const comparing = $derived(benchmarks.length > 0);
+
+  const benched = (sym) => benchmarks.some((b) => b.sym === sym);
+  function toggleBenchmark(sym, label) {
+    const s = (sym || '').toUpperCase();
+    if (benched(s)) { benchmarks = benchmarks.filter((b) => b.sym !== s); return; }
+    if (benchmarks.length >= BM_MAX) return;
+    const used = new Set(benchmarks.map((b) => b.color));
+    benchmarks = [...benchmarks, { sym: s, label: label ?? s, color: BM_COLORS.find((c) => !used.has(c)) ?? BM_COLORS[0] }];
+    bmQ = '';
+    bmResults = [];
+  }
+
+  // debounced ticker search for the benchmark menu (180ms, stale-proof)
+  let bmSeq = 0, bmTimer = null;
+  $effect(() => {
+    const q = bmQ.trim();
+    if (bmTimer) clearTimeout(bmTimer);
+    if (!q) { bmResults = []; bmLoading = false; return; }
+    bmLoading = true;
+    const mine = ++bmSeq;
+    bmTimer = setTimeout(async () => {
+      try {
+        const r = await api.search(q);
+        if (mine !== bmSeq) return;
+        bmResults = (r.results ?? []).slice(0, 6);
+      } catch {
+        if (mine === bmSeq) bmResults = [];
+      } finally {
+        if (mine === bmSeq) bmLoading = false;
+      }
+    }, 180);
+  });
+
+  // fetch each benchmark's daily history once, cached by symbol
+  const bmCache = new Map();   // sym → Promise<stock payload>
+  $effect(() => {
+    const list = benchmarks;
+    if (!list.length) { bmHist = {}; return; }
+    let cancelled = false;
+    (async () => {
+      const out = {};
+      await Promise.all(list.map(async ({ sym }) => {
+        try {
+          if (!bmCache.has(sym)) bmCache.set(sym, api.stock(sym));
+          const r = await bmCache.get(sym);
+          out[sym] = (r?.history ?? []).filter((p) => p.c != null);
+        } catch { out[sym] = []; }
+      }));
+      if (!cancelled) bmHist = out;
+    })();
+    return () => { cancelled = true; };
+  });
 
   const mapOf = (xy) => {
     const m = new Map();
@@ -99,6 +171,22 @@
     };
   });
 
+  // ── upcoming earnings (right header half) — own fetch, never blocks the chart ──
+  let earnings = $state(null);   // null = loading · [] = none · [{ticker,date,past}]
+  onMount(() => {
+    api.earnings()
+      .then((r) => { earnings = r?.items ?? []; })
+      .catch(() => { earnings = []; });
+  });
+  const fmtEarn = (iso) => new Date(iso + 'T00:00:00')
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  // "today" / "in Nd" for scheduled dates; past reports just say "reported"
+  function earnWhen(e) {
+    if (e.past) return 'reported';
+    const days = Math.round((new Date(e.date + 'T00:00:00') - new Date().setHours(0, 0, 0, 0)) / 86400000);
+    return days <= 0 ? 'today' : `in ${days}d`;
+  }
+
   const fmtUsd = (n) => '$' + Math.round(n).toLocaleString('en-US');
   const fmtUsdSigned = (n) => (n >= 0 ? '+$' : '−$') + Math.round(Math.abs(n)).toLocaleString('en-US');
   const fmtPct = (n) => (n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(1) + '%');
@@ -110,6 +198,7 @@
   let chart = null;
   let byTime = new Map();   // window time → row, for the crosshair read
   let handles = [];
+  let mainData = [];        // the primary series' points — drives the touch scrub
 
   function hexA(hex, a) {
     const n = parseInt(hex.slice(1), 16);
@@ -133,9 +222,6 @@
         horzLine: { color: PAL.GRID, width: 1, style: LineStyle.Dotted, labelVisible: false },
       },
       handleScroll: false, handleScale: false,
-      // touch: press-drag scrubs the crosshair (Apple-Stocks style), stays until
-      // the next tap. Range stays fixed — the range pills own the window.
-      trackingMode: { exitMode: TrackingModeExitMode.OnNextTap },
     });
 
     chart.subscribeCrosshairMove((p) => {
@@ -161,70 +247,128 @@
     });
   });
 
-  // Rebuild series whenever the window, mode, or theme changes.
+  // Rebuild series whenever the window, mode, benchmarks, or theme changes.
   $effect(() => {
     if (!chart) return;
     const v = view, m = mode, base = baseRow, t = chartType;
-    const showSpy = benchmark && (m === 'value' ? hasSpyUsd : hasSpyRet);
+    const cmp = benchmarks, bmData = bmHist;
 
     for (const h of handles) chart.removeSeries(h);
     handles = [];
     byTime = new Map(v.map((r) => [r.t, r]));
 
-    chart.applyOptions({
-      localization: {
-        priceFormatter: m === 'value'
-          ? (x) => '$' + x.toLocaleString('en-US', { maximumFractionDigits: 0 })
-          : (x) => (x >= 0 ? '+' : '') + x.toFixed(0) + '%',
-      },
-    });
+    if (cmp.length) {
+      // ── COMPARE: rebased % via the library's Percentage scale (same as the
+      // stock view's compare). Portfolio is fed its growth index (1+TWR) so the
+      // scale rebases it to honest window TWR%; benchmarks fed raw closes →
+      // price %. Everything rebases to the window start. ──
+      chart.priceScale('right').applyOptions({ mode: PriceScaleMode.Percentage });
+      chart.applyOptions({ localization: { priceFormatter: undefined } });
 
-    if (m === 'value') {
-      const main = t === 'line'
+      const lo = v[0]?.t, hi = v[v.length - 1]?.t;
+      const you = t === 'line'
         ? chart.addSeries(LineSeries, { color: BRAND, lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
-        : chart.addSeries(AreaSeries, {
-            lineColor: BRAND, lineWidth: 2,
-            topColor: hexA(BRAND, 0.26), bottomColor: hexA(BRAND, 0),
-            priceLineVisible: false, lastValueVisible: false,
-          });
-      main.setData(v.map((r) => ({ time: r.t, value: r.pv })));
-      handles.push(main);
-      if (showSpy) {
-        const sp = chart.addSeries(LineSeries, {
-          color: PAL.SPY, lineWidth: 1.5, lineStyle: LineStyle.Dotted,
-          priceLineVisible: false, lastValueVisible: false,
+        : chart.addSeries(AreaSeries, { lineColor: BRAND, lineWidth: 2,
+            topColor: hexA(BRAND, 0.22), bottomColor: hexA(BRAND, 0),
+            priceLineVisible: false, lastValueVisible: false });
+      mainData = v.filter((r) => r.pret != null).map((r) => ({ time: r.t, value: 1 + r.pret }));
+      // fall back to raw value if TWR isn't available, so the line never vanishes
+      you.setData(mainData.length >= 2 ? mainData : (mainData = v.map((r) => ({ time: r.t, value: r.pv }))));
+      handles.push(you);
+
+      for (const b of cmp) {
+        const hist = (bmData[b.sym] ?? []).filter((p) => (!lo || p.t >= lo) && (!hi || p.t <= hi));
+        if (hist.length < 2) continue;
+        const s = chart.addSeries(LineSeries, {
+          color: b.color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
         });
-        sp.setData(v.filter((r) => r.sv != null).map((r) => ({ time: r.t, value: r.sv })));
-        handles.push(sp);
+        s.setData(hist.map((p) => ({ time: p.t, value: p.c })));
+        handles.push(s);
       }
     } else {
-      const you = chart.addSeries(LineSeries, {
-        color: BRAND, lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
+      // ── PORTFOLIO ONLY: $ value or TWR %, normal scale ──
+      chart.priceScale('right').applyOptions({ mode: PriceScaleMode.Normal });
+      chart.applyOptions({
+        localization: {
+          priceFormatter: m === 'value'
+            ? (x) => '$' + x.toLocaleString('en-US', { maximumFractionDigits: 0 })
+            : (x) => (x >= 0 ? '+' : '') + x.toFixed(0) + '%',
+        },
       });
-      you.setData(v.filter((r) => r.pret != null).map((r) => ({ time: r.t, value: twRet(r, base, 'pret') })));
-      handles.push(you);
-      if (showSpy) {
-        const sp = chart.addSeries(LineSeries, {
-          color: PAL.SPY, lineWidth: 1.5, lineStyle: LineStyle.Dotted,
-          priceLineVisible: false, lastValueVisible: false,
+
+      if (m === 'value') {
+        const main = t === 'line'
+          ? chart.addSeries(LineSeries, { color: BRAND, lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
+          : chart.addSeries(AreaSeries, {
+              lineColor: BRAND, lineWidth: 2,
+              topColor: hexA(BRAND, 0.26), bottomColor: hexA(BRAND, 0),
+              priceLineVisible: false, lastValueVisible: false,
+            });
+        mainData = v.map((r) => ({ time: r.t, value: r.pv }));
+        main.setData(mainData);
+        handles.push(main);
+      } else {
+        const you = chart.addSeries(LineSeries, {
+          color: BRAND, lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
         });
-        sp.setData(v.filter((r) => r.sret != null).map((r) => ({ time: r.t, value: twRet(r, base, 'sret') })));
-        handles.push(sp);
+        mainData = v.filter((r) => r.pret != null).map((r) => ({ time: r.t, value: twRet(r, base, 'pret') }));
+        you.setData(mainData);
+        handles.push(you);
+        handles[0].createPriceLine({
+          price: 0, color: PAL.GRID, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false,
+        });
       }
-      handles[0].createPriceLine({
-        price: 0, color: PAL.GRID, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false,
-      });
     }
 
     chart.timeScale().fitContent();
   });
+
+  // ── touch scrub: HOLD (220ms) then DRAG moves the crosshair ──
+  // Manual pointer implementation (deterministic, unlike the library's
+  // tracking mode): hold engages, drag scrubs via setCrosshairPosition, lift
+  // clears. Quick swipes cancel the hold so page scrolling stays natural.
+  // Desktop mouse hover is untouched — the library handles it natively.
+  const HOLD_MS = 1, HOLD_SLOP = 8;
+  let holdTimer = null, scrubbing = false, downAt = null;
+
+  function scrubAt(clientX) {
+    if (!chart || !handles[0] || !mainData.length) return;
+    const r = host.getBoundingClientRect();
+    const x = Math.min(Math.max(clientX - r.left, 0), r.width);
+    const lg = chart.timeScale().coordinateToLogical(x);
+    if (lg == null) return;
+    const pt = mainData[Math.min(mainData.length - 1, Math.max(0, Math.round(lg)))];
+    if (!pt) return;
+    chart.setCrosshairPosition(pt.value, pt.time, handles[0]);
+    hoverRow = byTime.get(pt.time) ?? null;
+  }
+  function endScrub() {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    downAt = null;
+    if (scrubbing) {
+      scrubbing = false;
+      chart?.clearCrosshairPosition();
+      hoverRow = null;
+    }
+  }
+  function onPtrDown(e) {
+    if (e.pointerType !== 'touch') return;
+    downAt = { x: e.clientX, y: e.clientY };
+    holdTimer = setTimeout(() => { holdTimer = null; scrubbing = true; scrubAt(downAt.x); }, HOLD_MS);
+  }
+  function onPtrMove(e) {
+    if (e.pointerType !== 'touch') return;
+    if (scrubbing) { scrubAt(e.clientX); return; }
+    // moved before the hold landed → it's a scroll, not a scrub
+    if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > HOLD_SLOP) endScrub();
+  }
+  function onPtrEnd(e) { if (e.pointerType === 'touch') endScrub(); }
 </script>
 
 <!-- two widgets matching the stock view's grid language: header (split 2-up) + chart -->
 <div class="pcg">
   <div class="pc-head-row">
   <section class="pc-w pc-head-w">
-  <div class="pc-eyebrow"><span class="pc-dot" aria-hidden="true"></span>Your portfolio</div>
   <div class="pc-head">
     <div class="pc-read">
       <div class="pc-label">
@@ -234,15 +378,15 @@
         {#if mode === 'value'}
           <div class="pc-value">{fmtUsd(read.pv)}</div>
           <div class="pc-delta">
-            {#if read.gap != null}
+            {#if !comparing && read.gap != null}
               <span class={read.gap >= 0 ? 'up' : 'down'}>{fmtUsdSigned(read.gap)} vs SPY</span>
             {/if}
-            <span class="pc-muted">you {fmtPct(read.youPct)}{#if read.spyPct != null} · SPY {fmtPct(read.spyPct)}{/if}</span>
+            <span class="pc-muted">you {fmtPct(read.youPct)}{#if !comparing && read.spyPct != null} · SPY {fmtPct(read.spyPct)}{/if}</span>
           </div>
         {:else}
           <div class="pc-value {(read.youPct ?? 0) >= 0 ? 'up' : 'down'}">{fmtPct(read.youPct)}</div>
           <div class="pc-delta">
-            {#if read.spyPct != null}
+            {#if !comparing && read.spyPct != null}
               <span class="pc-muted">SPY {fmtPct(read.spyPct)}</span>
               {#if read.youPct != null}
                 {@const diff = read.youPct - read.spyPct}
@@ -255,8 +399,25 @@
     </div>
   </div>
   </section>
-  <!-- right half intentionally blank — placeholder for a future widget -->
-  <section class="pc-w pc-head-empty" aria-hidden="true"></section>
+  <!-- right half: next earnings dates across the holdings (6 max, 3×2 grid) -->
+  <section class="pc-w pc-head-earn">
+    <div class="pc-label">Upcoming earnings</div>
+    {#if earnings === null}
+      <div class="pe-note">loading…</div>
+    {:else if earnings.length === 0}
+      <div class="pe-note">no earnings dates</div>
+    {:else}
+      <div class="pe-grid">
+        {#each earnings as e (e.ticker)}
+          <div class="pe-cell" class:pe-past={e.past}>
+            <span class="pe-tkr">{e.ticker}</span>
+            <span class="pe-date">{fmtEarn(e.date)}</span>
+            <span class="pe-when">{earnWhen(e)}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </section>
   </div>
 
   <section class="pc-w pc-chart-w">
@@ -275,25 +436,69 @@
       </div>
 
       <div class="pc-tool">
-        <button class="pc-btn" class:active={openMenu === 'compare'} onclick={() => toggleMenu('compare')}>
-          <span class="pc-ic" aria-hidden="true">⇄</span>Benchmark<span class="pc-cv" aria-hidden="true">▾</span>
+        <button class="pc-btn" class:active={openMenu === 'compare' || comparing} onclick={() => toggleMenu('compare')}>
+          <span class="pc-ic" aria-hidden="true">⇄</span>Benchmark{#if comparing}<span class="pc-count">{benchmarks.length}</span>{/if}<span class="pc-cv" aria-hidden="true">▾</span>
         </button>
         {#if openMenu === 'compare'}
-          <div class="pc-menu pc-menu-wide">
-            <button class="pc-item" class:sel={benchmark} onclick={() => (benchmark = !benchmark)}>
-              <span class="pc-check">{benchmark ? '✓' : ''}</span>S&amp;P 500<span class="pc-sym">SPY</span>
-            </button>
+          <div class="pc-menu pc-menu-cmp">
+            <input class="pc-cmp-input" type="text" placeholder="Search any stock or ETF…"
+              bind:value={bmQ}
+              autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+            {#if bmQ.trim()}
+              {#if bmLoading}
+                <div class="pc-cmp-note">searching…</div>
+              {:else if bmResults.length === 0}
+                <div class="pc-cmp-note">no matches</div>
+              {:else}
+                {#each bmResults as r (r.symbol)}
+                  <button class="pc-item" class:sel={benched((r.symbol || '').toUpperCase())}
+                    onclick={() => toggleBenchmark(r.symbol, r.name)}>
+                    <span class="pc-check">{benched((r.symbol || '').toUpperCase()) ? '✓' : ''}</span>
+                    <span class="pc-cmp-name">{r.name}</span><span class="pc-sym">{r.symbol}</span>
+                  </button>
+                {/each}
+              {/if}
+            {:else}
+              {#each QUICK_BMS as b (b.sym)}
+                <button class="pc-item" class:sel={benched(b.sym)} onclick={() => toggleBenchmark(b.sym, b.label)}>
+                  <span class="pc-check">{benched(b.sym) ? '✓' : ''}</span>{b.label}<span class="pc-sym">{b.sym}</span>
+                </button>
+              {/each}
+              {#each benchmarks.filter((b) => !QUICK_BMS.some((q) => q.sym === b.sym)) as b (b.sym)}
+                <button class="pc-item sel" onclick={() => toggleBenchmark(b.sym)}>
+                  <span class="pc-check">✓</span><span class="pc-cmp-name">{b.label}</span><span class="pc-sym">{b.sym}</span>
+                </button>
+              {/each}
+            {/if}
           </div>
         {/if}
       </div>
 
-      <div class="pc-toggle" role="group" aria-label="metric">
-        <button class:on={mode === 'value'} onclick={() => (mode = 'value')}>Value</button>
-        <button class:on={mode === 'return'} onclick={() => (mode = 'return')}>Return</button>
-      </div>
+      {#if !comparing}
+        <div class="pc-toggle" role="group" aria-label="metric">
+          <button class:on={mode === 'value'} onclick={() => (mode = 'value')}>Value</button>
+          <button class:on={mode === 'return'} onclick={() => (mode = 'return')}>Return</button>
+        </div>
+      {/if}
     </div>
 
-    <div class="pc-canvas" bind:this={host}></div>
+    <!-- active benchmarks — removable legend chips, dot = series colour -->
+    {#if comparing}
+      <div class="pc-cmps">
+        <span class="pc-chip pc-chip-self"><span class="pc-dot" style="background:{BRAND}"></span>You</span>
+        {#each benchmarks as b (b.sym)}
+          <button class="pc-chip" onclick={() => toggleBenchmark(b.sym)} title="Remove {b.sym}">
+            <span class="pc-dot" style="background:{b.color}"></span>{b.sym}<span class="pc-chip-x" aria-hidden="true">✕</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- svelte-ignore a11y_no_static_element_interactions -- touch-scrub surface;
+         the readout it drives is mirrored in the header text -->
+    <div class="pc-canvas" bind:this={host}
+      onpointerdown={onPtrDown} onpointermove={onPtrMove}
+      onpointerup={onPtrEnd} onpointercancel={onPtrEnd}></div>
     <div class="pc-ranges" role="group" aria-label="range">
       {#each RANGES as r}
         <button class:on={range === r.k} onclick={() => (range = r.k)}>{r.k}</button>
@@ -313,13 +518,25 @@
   .pc-head-row { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .pc-head-w { height: var(--title-h, 152px); display: flex; flex-direction: column;
     gap: 10px; padding: 12px 16px 14px; box-sizing: border-box; }
-  .pc-head-empty { height: var(--title-h, 152px); }
+  /* earnings half — same locked header height; 3×2 cells split by hairlines */
+  .pc-head-earn { height: var(--title-h, 152px); display: flex; flex-direction: column;
+    gap: 8px; padding: 12px 16px 14px; box-sizing: border-box; overflow: hidden; }
+  .pe-note { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .pe-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: 1fr 1fr; column-gap: 14px; }
+  .pe-cell { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px;
+    border-bottom: var(--bw) solid var(--hairline); }
+  .pe-grid .pe-cell:nth-child(n + 4) { border-bottom: 0; }
+  .pe-tkr { font-family: var(--mono); font-size: 11.5px; font-weight: 700; letter-spacing: .04em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pe-date { font-family: var(--mono); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+    white-space: nowrap; }
+  .pe-when { font-family: var(--sans); font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--brand); white-space: nowrap; }
+  .pe-past { opacity: .55; }
+  .pe-past .pe-when { color: var(--muted); }
   .pc-chart-w { flex: 0 0 440px; min-height: 0; display: flex; flex-direction: column; gap: 10px;
     padding: 14px 16px; }
-  .pc-eyebrow { display: flex; align-items: center; gap: 7px; font-family: var(--sans); font-size: 10px;
-    font-weight: 700; text-transform: uppercase; letter-spacing: .14em; color: var(--brand); }
-  .pc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); border: 1.5px solid var(--ink); }
-
   .pc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .pc-read { min-width: 0; }
   .pc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700;
@@ -345,7 +562,6 @@
   .pc-menu { position: absolute; top: calc(100% + 5px); left: 0; z-index: 20; min-width: 150px;
     display: flex; flex-direction: column; padding: 5px; gap: 1px;
     background: var(--surface); border: var(--bw) solid var(--ink); border-radius: var(--r); box-shadow: var(--sh); }
-  .pc-menu-wide { min-width: 185px; }
   .pc-item { display: flex; align-items: center; gap: 8px; width: 100%; cursor: pointer; text-align: left;
     font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--ink);
     padding: 7px 9px; border: 0; background: transparent; border-radius: 6px; }
@@ -353,6 +569,30 @@
   .pc-item.sel { font-weight: 700; }
   .pc-check { flex: 0 0 14px; font-size: 12px; color: var(--brand); }
   .pc-sym { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+  /* benchmark compare menu: search box + results / quick picks */
+  .pc-menu-cmp { min-width: 230px; }
+  .pc-cmp-input { box-sizing: border-box; width: 100%; margin-bottom: 4px; padding: 7px 9px;
+    border: var(--bw) solid var(--hairline); border-radius: 6px; outline: none; background: transparent;
+    font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .pc-cmp-input:focus { border-color: var(--ink); }
+  .pc-cmp-input::placeholder { color: var(--muted); font-weight: 500; }
+  .pc-cmp-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pc-cmp-note { padding: 7px 9px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .pc-count { font-family: var(--mono); font-size: 10px; font-weight: 700; line-height: 1;
+    padding: 2px 6px; border-radius: 999px; background: var(--paper); color: var(--ink); border: 1px solid currentColor; }
+  /* iOS focus-zoom guard for the in-menu search */
+  @media (max-width: 700px) { .pc-cmp-input { font-size: 16px; } }
+
+  /* active-benchmark chips under the toolbar */
+  .pc-cmps { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .pc-chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--ink);
+    padding: 3px 9px; background: transparent; border: var(--bw) solid var(--hairline); border-radius: 999px; }
+  .pc-chip:hover { border-color: var(--ink); }
+  .pc-chip-self { cursor: default; color: var(--muted); }
+  .pc-dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--ink); flex: 0 0 auto; }
+  .pc-chip-x { font-size: 9px; opacity: .6; }
 
   /* metric toggle — system pills (text → outline hover → solid ink when on) */
   .pc-toggle { display: inline-flex; flex: 0 0 auto; gap: 2px; margin-left: auto; }

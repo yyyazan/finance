@@ -126,7 +126,6 @@
   /* let the widget grid set its own height — the page scrolls, not the stage */
   .stage-widgets { display: block; min-height: 0; }
   .stage-chart { min-height: 0; }
-  .stage-chart :global(.pc-card) { flex: 1 1 auto; }
 
   /* ── inline search ── */
   .stage-search { overflow: hidden; }

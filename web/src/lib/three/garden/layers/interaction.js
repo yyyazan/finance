@@ -16,38 +16,49 @@ export default function createInteraction() {
       const canvas = ctx.canvas;
       const orbit = ctx.state.orbit;
 
-      // ── Drag-to-orbit ───────────────────────────────────────────────────
+      // Drag-to-orbit is enabled on TOUCH (mobile hero) only. On desktop the
+      // camera stays locked to the tuned framing so an accidental drag never
+      // fights the plant hover/click interaction (pick.js). The idle sway below
+      // still runs everywhere to keep the scene alive.
+      const isTouch =
+        typeof window !== "undefined" &&
+        window.matchMedia &&
+        window.matchMedia("(hover: none), (pointer: coarse)").matches;
+
+      // ── Drag-to-orbit (touch only) ──────────────────────────────────────
       // Drag left/right to spin around the bed; drag up to tilt toward the sky,
       // drag down for a more top-down tending view. Elevation is clamped so you
       // never flip under the ground or fully overhead.
-      canvas.style.cursor = "grab";
-      const last = { x: 0, y: 0 };
-
-      function onDown(e) {
-        // Let a TransformControls gizmo drag win the mouse outright, so grabbing
-        // an axis handle never also spins the camera.
-        if (ctx.state.transformDragging) return;
-        orbit.dragging = true;
-        last.x = e.clientX;
-        last.y = e.clientY;
-        canvas.style.cursor = "grabbing";
-      }
-      function onUp() {
-        orbit.dragging = false;
+      if (isTouch) {
         canvas.style.cursor = "grab";
-      }
-      function onMove(e) {
-        if (ctx.state.transformDragging) return;
-        if (!orbit.dragging) return;
-        orbit.az += (e.clientX - last.x) * 0.005;
-        orbit.el = Math.max(0.04, Math.min(0.95, orbit.el + (e.clientY - last.y) * 0.005));
-        last.x = e.clientX;
-        last.y = e.clientY;
-      }
+        const last = { x: 0, y: 0 };
 
-      ctx.addListener(canvas, "mousedown", onDown);
-      ctx.addListener(window, "mouseup", onUp);
-      ctx.addListener(canvas, "mousemove", onMove);
+        function onDown(e) {
+          // Let a TransformControls gizmo drag win the mouse outright, so grabbing
+          // an axis handle never also spins the camera.
+          if (ctx.state.transformDragging) return;
+          orbit.dragging = true;
+          last.x = e.clientX;
+          last.y = e.clientY;
+          canvas.style.cursor = "grabbing";
+        }
+        function onUp() {
+          orbit.dragging = false;
+          canvas.style.cursor = "grab";
+        }
+        function onMove(e) {
+          if (ctx.state.transformDragging) return;
+          if (!orbit.dragging) return;
+          orbit.az += (e.clientX - last.x) * 0.005;
+          orbit.el = Math.max(0.04, Math.min(0.95, orbit.el + (e.clientY - last.y) * 0.005));
+          last.x = e.clientX;
+          last.y = e.clientY;
+        }
+
+        ctx.addListener(canvas, "mousedown", onDown);
+        ctx.addListener(window, "mouseup", onUp);
+        ctx.addListener(canvas, "mousemove", onMove);
+      }
 
       // ── Per-frame orbit ───────────────────────────────────────────────────
       // Idle → a tiny azimuth sway keeps the scene alive; while dragging → follow

@@ -85,6 +85,10 @@ html, body {
   font-family: var(--sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  /* lock horizontal scroll app-wide — nothing should pan sideways */
+  max-width: 100%;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
 }
 a { color: inherit; text-decoration: none; }
 
@@ -126,14 +130,11 @@ a { color: inherit; text-decoration: none; }
 .btn-mono { font-family: var(--mono); font-weight: 600; }
 .btn:disabled { opacity: .55; cursor: default; }
 
-/* --u = the dashboard's single 1×1 unit (one grid ROW). every widget is N cols ×
-   M of these rows: KPI 1×1, spark 2×1, deck 2×2, slot 2×1, peek 1×3, chart 3×3.
-   columns stay 6 & fluid; only the row height is fixed, so the fold stays put. */
 /* --title-h = the canonical height for every "title" card (stock header, portfolio
    header, KPI cards). Locked to the tallest variant — the holdings stock header,
    which carries a wrapped position row — so the whole top band lines up. */
-.content { --u: 168px; --title-h: 152px; padding: 24px 28px; box-sizing: border-box; width: 100%; min-width: 0; max-width: 1400px; margin-inline: auto; display: flex; flex-direction: column; gap: 18px; }
-/* dashboard only: tighter, even rhythm between garden · KPIs · deck · ribbon */
+.content { --title-h: 152px; padding: 24px 28px; box-sizing: border-box; width: 100%; min-width: 0; max-width: 1400px; margin-inline: auto; display: flex; flex-direction: column; gap: 18px; }
+/* dashboard only: tighter, even rhythm under the garden hero */
 .content-has-hero { padding-top: 0; gap: 14px; }
 .page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
 .page-subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -198,39 +199,15 @@ table.data-table tbody tr:hover { background: color-mix(in srgb, var(--ink) 7%, 
 .cell-gain { background: var(--gain); }
 .cell-loss { background: var(--loss); }
 
-/* ── Widget grid (Apple-widget sizing) ────────────────────────────────────── */
+/* ── Widget grid (Apple-widget sizing) — pre-overhaul /investments only.
+   KpiCard emits `widget-{size}` (mini · small in current use); the strip/deck
+   grids that consumed the bigger sizes are gone. Delete with the Research rebuild. */
 .widget-grid { --unit: clamp(140px, 13vw, 200px); --gap: 16px; display: grid; grid-template-columns: repeat(6, var(--unit)); grid-auto-rows: var(--unit); gap: var(--gap); width: max-content; }
-.widget-small { grid-column: span 1; }
+.widget-mini, .widget-small { grid-column: span 1; }
 .widget-medium { grid-column: span 2; }
 .widget-large { grid-column: span 2; grid-row: span 2; }
 .widget-xl { grid-column: span 4; grid-row: span 2; }
 .widget-tall { grid-column: span 2; grid-row: span 3; }
-
-/* ── Dashboard KPI strip (between garden and deck; all three fit the fold) ─────
-   Compact, equal-width cards — denser than a full widget tile, still breathing.
-   Cards carry a supporting figure (e.g. cash %), not just one number. */
-.kpi-strip { display: grid; grid-template-columns: repeat(6, 1fr); grid-auto-rows: var(--u); gap: 16px; width: 100%; }
-.kpi-strip .glass-card { padding: 16px 18px; }   /* height comes from the --u row */
-/* compact contexts (strip + deck slot): keep the goal value on ONE line so the
-   card fits a single --u row instead of wrapping to 2 lines and overflowing. */
-.kpi-strip .progress-value, .deck-slot .progress-value { font-size: 16px; white-space: nowrap; }
-.kpi-strip .kpi-value { font-size: 26px; }
-
-/* ── Dashboard P&L strip: 6 identical half-height (0.5×1) mini tiles ──────────
-   Each tile spans 1 of 6 columns and is half a --u row tall — a compact landscape
-   rectangle. Six fill the top row. Tighter padding/figure so label + value + sub
-   breathe inside the short tile. */
-.pnl-strip { display: grid; grid-template-columns: repeat(6, 1fr); grid-auto-rows: calc(var(--u) / 2); gap: 16px; width: 100%; }
-.widget-mini { grid-column: span 1; }
-.pnl-strip .glass-card { padding: 12px 14px; }
-.pnl-strip .kpi-label { margin-bottom: 2px; }
-.pnl-strip .kpi-value { font-size: 20px; }
-.pnl-strip .kpi-subtitle { margin-top: 2px; }
-
-/* Reserved 1×1 placeholder (e.g. the half of the deck slot freed by merging
-   Cash + Goal). Dashed ink-muted outline, same convention as an empty deck-slot. */
-.deck-reserved { display: grid; place-items: center; border: var(--bw) dashed var(--muted); border-radius: var(--r);
-  color: var(--muted); font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
 
 
 /* ── Garden hero band + greeting (garden three.js reskin handled separately) ── */
@@ -256,58 +233,6 @@ table.data-table tbody tr:hover { background: color-mix(in srgb, var(--ink) 7%, 
   color: #1a1a1a;
 }
 
-/* ── Card hand — flat brutalist deck on a green "felt" band ────────────────── */
-/* The band is a green rectangle the cards sit on; its hard shadow drops STRAIGHT
-   DOWN in a darker green (unlike the down-right ink shadow everything else uses). */
-.card-hand-band {
-  --deck: #6f7a63;            /* felt green */
-  position: relative; box-sizing: border-box; width: fit-content; max-width: 100%;
-  padding: 0 18px; margin-bottom: 4px;
-}
-/* Green felt rail behind/over the cards: covers the bottom third of each card,
-   with a BLACK hard shadow dropping 4px STRAIGHT DOWN. */
-.card-hand-band::after {
-  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 70px;  /* ≈ 1/3 of card height */
-  background: var(--deck); border: var(--bw) solid var(--ink); border-radius: var(--r);
-  box-shadow: 0 4px 0 0 var(--ink); z-index: 2; pointer-events: none;
-}
-/* Single line, overlapping fanned deck — no arc (no rotation). */
-.card-hand { position: relative; z-index: 1; display: flex; flex-wrap: nowrap; align-items: flex-end; height: 210px; width: max-content; }
-.portfolio-card {
-  position: relative; flex: 0 0 auto; width: 150px; height: 210px; margin-left: -80px; padding: 12px;
-  background: var(--surface); border: var(--bw) solid var(--ink); border-radius: 10px; box-shadow: var(--sh);
-  cursor: pointer; transition: transform .14s ease, box-shadow .14s ease; overflow: hidden; color: var(--ink);
-}
-.portfolio-card:first-child { margin-left: 0; }
-.portfolio-card:hover { z-index: 3; transform: translateY(-14px); box-shadow: var(--sh-pop); }
-/* flat diagonal shine swipe replaces the WebGL holo foil */
-.portfolio-card::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,.55) 50%, transparent 60%);
-  transform: translateX(-120%); transition: transform .5s ease;
-}
-.portfolio-card:hover::after { transform: translateX(120%); }
-.suit-sp { --suit: #5fb3c4; }   /* light teal-blue */
-.suit-ht { --suit: #e08a6a; }   /* terracotta */
-.suit-dm { --suit: #0fb39a; }   /* jade */
-.suit-cl { --suit: #d8b878; }   /* sand */
-.suit-jk { --suit: #9bbf8a; }   /* sage */
-.corner { position: absolute; display: flex; flex-direction: column; align-items: center; line-height: .9; font-family: var(--sans); font-weight: 700; font-size: 16px; color: var(--ink); }
-.corner-tl { top: 9px; left: 10px; }
-.corner-br { bottom: 9px; right: 10px; transform: rotate(180deg); }
-.corner-suit { font-size: 13px; margin-top: 2px; }
-.card-center { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 4px; gap: 2px; text-align: center; }
-.card-logo-wrap { position: relative; width: 36px; height: 36px; margin-bottom: 6px; }
-.card-logo, .card-logo-fallback { position: absolute; inset: 0; width: 36px; height: 36px; border-radius: 8px; border: var(--bw) solid var(--ink); box-sizing: border-box; }
-.card-logo { z-index: 1; object-fit: contain; background: #fff; }
-.card-logo-fallback { z-index: 0; display: flex; align-items: center; justify-content: center; font-family: var(--sans); font-size: 15px; font-weight: 700; color: var(--ink); background: var(--suit); }
-.card-ticker { font-family: var(--sans); font-size: 19px; font-weight: 700; color: var(--ink); }
-.card-name { font-family: var(--mono); font-size: 8.5px; color: var(--muted); max-width: 122px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-pct { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--ink); margin-top: 4px; }
-.card-pct-label { font-family: var(--mono); font-size: 8px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-.card-suitblock { width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; background: var(--suit); border: var(--bw) solid var(--ink); border-radius: 8px; margin-bottom: 8px; color: var(--ink); }
-.joker-center { gap: 4px; }
-
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 700px) {
   .app-root { grid-template-columns: minmax(0, 1fr); }
@@ -321,12 +246,9 @@ table.data-table tbody tr:hover { background: color-mix(in srgb, var(--ink) 7%, 
   .greeting-title { font-size: 30px; }
   .widget-grid { --unit: clamp(130px, 42vw, 170px); --gap: 12px; grid-template-columns: repeat(2, var(--unit)); }
   .widget-medium, .widget-large, .widget-xl, .widget-tall { grid-column: span 2; }
-  /* Mobile precedent (full mobile pass is a separate session): KPI cards go 2-up. */
-  .kpi-strip { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-  .pnl-strip { grid-template-columns: repeat(3, 1fr); gap: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .portfolio-card, .portfolio-card::after, .nav-link { transition: none; }
+  .nav-link { transition: none; }
 }
 
 /* ── Mobile dashboard shell (phone PWA) ──────────────────────────────────────
@@ -336,10 +258,10 @@ table.data-table tbody tr:hover { background: color-mix(in srgb, var(--ink) 7%, 
 @media (max-width: 700px) {
   html, body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
   /* 100dvh tracks Safari's collapsing URL bar; equals 100vh in standalone.
-     Bottom padding clears the floating dock (64px capsule + 12px inset) + home
+     Bottom padding clears the floating dock (56px capsule + 8px inset) + home
      indicator, with a little air above it. */
   .m-shell { min-height: 100dvh; box-sizing: border-box;
-    padding: 0 14px calc(88px + env(safe-area-inset-bottom));
+    padding: 0 14px calc(78px + env(safe-area-inset-bottom));
     display: flex; flex-direction: column; }
   .m-pane { min-width: 0; }
   .m-pane.hidden { display: none; }
