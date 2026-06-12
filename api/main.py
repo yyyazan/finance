@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 
-from api import backup, state
+from api import auth, backup, state
 from portfolio.data import db as db_mod
 from api.config import CORS_ORIGINS
 from api.routers import dashboard, entries, search, stock, watchlist
@@ -65,6 +65,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Sprout API", lifespan=lifespan)
 
+# Password gate (SPROUT_PASSWORD env var; disabled when unset, e.g. local dev).
+app.add_middleware(auth.AuthGateMiddleware)
 # The big JSON payloads (per-stock history ≈ 150-300KB) compress ~10x.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
@@ -75,6 +77,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(entries.router)
 app.include_router(search.router)

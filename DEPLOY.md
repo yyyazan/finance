@@ -37,6 +37,7 @@ check is that all of these exist.
 |---|---|---|
 | `PORTFOLIO_DB` | `/data/portfolio.db` | Points the app at the volume. **Without it, the app uses an ephemeral path, ignores the volume, and 500s.** |
 | `PORTFOLIO_PRICES` | `/data/prices` | yfinance price cache on the volume (regenerable, but persisting it = fast boots). |
+| `SPROUT_PASSWORD` | any strong passphrase | Password gate for all `/api` data (api/auth.py). **Unset = the whole portfolio is public.** Login sets a 90-day cookie; rotating the password logs every device out. |
 | `R2_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` | Cloudflare R2 S3 endpoint (account-level, **no bucket name in it**). |
 | `R2_ACCESS_KEY_ID` | _(from R2 API token)_ | Backup auth. |
 | `R2_SECRET_ACCESS_KEY` | _(from R2 API token)_ | Backup auth (shown only once at token creation). |
