@@ -96,9 +96,9 @@ _mom_cache: dict = {"ts": 0.0, "key": None, "data": None}
 def momentum_payload(s: PortfolioSnapshot) -> dict:
     """Fresh per-holding intraday momentum (spot vs prior-session close).
 
-    Bypasses both freezes: clears the per-process spot LRU and recomputes from
-    live spots, cached only for `_MOM_TTL_SECONDS`. Reference closes come from
-    the (cheap, cached) daily-close history; only spot is forced fresh.
+    Quotes are fetched in one batched call with `max_age=0` (force fresh),
+    cached only for `_MOM_TTL_SECONDS`. Reference closes come from the (cheap,
+    cached) daily-close history; only spot is forced fresh.
     """
     tickers = [str(t) for t in s.pnl.index]
     key = tuple(tickers)
@@ -106,17 +106,11 @@ def momentum_payload(s: PortfolioSnapshot) -> dict:
     if _mom_cache["data"] is not None and _mom_cache["key"] == key and (now - _mom_cache["ts"] < _MOM_TTL_SECONDS):
         return _mom_cache["data"]
 
-    prices_mod.spot.cache_clear()  # force fresh quotes this cycle
-    # TODO(perf): batch the quotes — replace the per-ticker spot() loop with a single
-    # yf.Tickers("AAPL MSFT …") / yf.download(period="1d") call so a refresh is 1 request
-    # instead of N. Fine for a few users at a 45s TTL now; do this before scaling / faster polling.
+    quotes = prices_mod.quotes(tickers, max_age=0.0)  # force fresh quotes this cycle
     moves: dict = {}
     for t in tickers:
         hist = prices_mod.history(t)
-        try:
-            spot = prices_mod.spot(t)
-        except Exception:
-            spot = None
+        spot = quotes[t]["price"]
         day = _spot_move(hist, spot, 1)
         week = _spot_move(hist, spot, 5)
         moves[t] = {

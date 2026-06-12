@@ -9,6 +9,7 @@
   import { createChart, AreaSeries, LineSeries, ColorType, CrosshairMode, LineStyle, PriceScaleMode } from 'lightweight-charts';
   import { theme } from '$lib/theme.js';
   import { api } from '$lib/api.js';
+  import { cachedStock } from '$lib/stockCache.js';
 
   // equity = {x:['YYYY-MM-DD'...], y:[$...]} portfolio value
   // spy    = {x,y} parallel SPY portfolio ($) — same cash flows invested in SPY
@@ -89,8 +90,7 @@
     }, 180);
   });
 
-  // fetch each benchmark's daily history once, cached by symbol
-  const bmCache = new Map();   // sym → Promise<stock payload>
+  // fetch each benchmark's daily history once, via the shared module cache
   $effect(() => {
     const list = benchmarks;
     if (!list.length) { bmHist = {}; return; }
@@ -99,8 +99,7 @@
       const out = {};
       await Promise.all(list.map(async ({ sym }) => {
         try {
-          if (!bmCache.has(sym)) bmCache.set(sym, api.stock(sym));
-          const r = await bmCache.get(sym);
+          const r = await cachedStock(sym);
           out[sym] = (r?.history ?? []).filter((p) => p.c != null);
         } catch { out[sym] = []; }
       }));

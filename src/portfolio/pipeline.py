@@ -114,7 +114,7 @@ def run(
 
     # ── 2. Splits + adj_shares ──────────────────────────────────────────────
     tickers = trades_raw["ticker"].unique().tolist()
-    splits_by_ticker = {t: prices_mod.splits(t) for t in tickers}
+    splits_by_ticker = prices_mod.splits_map(tickers)
     trades_adj = pos_mod.split_adjust(trades_raw, splits_by_ticker)
 
     # ── 3. Open positions ───────────────────────────────────────────────────
@@ -125,8 +125,13 @@ def run(
     all_history = prices_mod.histories(tickers)
 
     # ── 5. Spot prices for open tickers (drop tickers with no live price) ──
-    spot_prices = {t: prices_mod.spot(t) for t in open_tickers}
-    spot_prices = {t: p for t, p in spot_prices.items() if p is not None}
+    # One batched call; also warms the quote cache for the per-ticker spot()
+    # lookups inside the card computation (step 14).
+    spot_prices = {
+        t: q["price"]
+        for t, q in prices_mod.quotes(open_tickers).items()
+        if q["price"] is not None
+    }
 
     # ── 6. Cost basis + unrealized P&L ──────────────────────────────────────
     cost_basis = cb_mod.weighted_avg_cost(trades_adj, open_tickers)

@@ -17,13 +17,18 @@ the cache).
 
 from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from functools import lru_cache
 
 import pandas as pd
 import yfinance as yf
 
 from portfolio.data import store
+
+# Concurrent yfinance fetches share one worker cap — stay under Yahoo's
+# throttling radar while still collapsing N round-trips into ~1.
+_MAX_QUOTE_WORKERS = 8
 
 # L1 in-process memo (cleared on process restart).
 _HISTORY_CACHE: dict[str, pd.Series] = {}
@@ -81,9 +86,26 @@ def history(ticker: str) -> pd.Series:
     return series
 
 
+def _parallel(fn, keys: list[str]) -> dict:
+    """Fan a per-ticker fetch out over threads, preserving key order.
+
+    Safe with the cache stack: L1 dict writes are GIL-atomic, Parquet paths are
+    per-ticker, and the shared sqlite meta connection is serialized by CPython.
+    """
+    if len(keys) <= 1:
+        return {k: fn(k) for k in keys}
+    with ThreadPoolExecutor(max_workers=min(_MAX_QUOTE_WORKERS, len(keys))) as pool:
+        return dict(zip(keys, pool.map(fn, keys)))
+
+
 def histories(tickers: list[str]) -> dict[str, pd.Series]:
     """Bulk-load close-price histories. Empty series for delisted tickers."""
-    return {t: history(t) for t in tickers}
+    return _parallel(history, list(tickers))
+
+
+def splits_map(tickers: list[str]) -> dict[str, pd.Series]:
+    """Bulk-load split series, misses fetched concurrently."""
+    return _parallel(splits, list(tickers))
 
 
 def history_from(ticker: str, start: datetime | pd.Timestamp) -> pd.Series:
@@ -153,16 +175,53 @@ def dividends(ticker: str) -> pd.Series:
     return d
 
 
-@lru_cache(maxsize=128)
-def spot(ticker: str) -> float | None:
-    """Latest live price (fast_info.last_price). LRU-cached per process.
+# Live quotes: short-TTL in-process cache + threaded fan-out. fast_info is one
+# HTTP round-trip per ticker no matter the wrapper (yf.Tickers included), so a
+# thread pool is the real batching. Spot is inherently live — never persisted.
+_QUOTE_TTL = 30.0
+_quote_cache: dict[str, tuple[float, dict]] = {}  # ticker -> (fetched_at, quote)
 
-    Spot is inherently live, so it stays an in-process cache only (not persisted).
-    """
+
+def _fetch_quote(ticker: str) -> dict:
+    # yf.Ticker is constructed per task — instances aren't thread-safe.
+    price = prev = None
     try:
-        return float(yf.Ticker(yf_symbol(ticker)).fast_info.last_price)
+        fi = yf.Ticker(yf_symbol(ticker)).fast_info
+        price = float(fi.last_price)
+        prev = float(fi.previous_close)
     except Exception:
-        return None
+        pass
+    return {"price": price, "prev_close": prev}
+
+
+def quotes(tickers: list[str], *, max_age: float = _QUOTE_TTL) -> dict[str, dict]:
+    """Live quotes ({price, prev_close}) for many tickers, misses fetched
+    concurrently in one threaded fan-out.
+
+    Entries younger than `max_age` seconds are served from cache; pass 0.0 to
+    force fresh quotes. A failed fetch yields None values (same posture as the
+    old per-ticker spot()).
+    """
+    now = time.time()
+    out: dict[str, dict] = {}
+    misses: list[str] = []
+    for t in tickers:
+        hit = _quote_cache.get(t)
+        if hit is not None and now - hit[0] < max_age:
+            out[t] = hit[1]
+        else:
+            misses.append(t)
+    if misses:
+        with ThreadPoolExecutor(max_workers=min(_MAX_QUOTE_WORKERS, len(misses))) as pool:
+            for t, q in zip(misses, pool.map(_fetch_quote, misses)):
+                _quote_cache[t] = (now, q)
+                out[t] = q
+    return out
+
+
+def spot(ticker: str) -> float | None:
+    """Latest live price (fast_info.last_price), via the shared quote cache."""
+    return quotes([ticker])[ticker]["price"]
 
 
 def price_on_date(ticker: str, date: pd.Timestamp) -> float | None:

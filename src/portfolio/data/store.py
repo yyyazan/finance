@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,6 +41,10 @@ TTL = {
 }
 
 _meta_conn = None  # lazily-opened SQLite connection for price_cache_meta
+# prices.py fans cache reads/writes out over threads; one sqlite3 connection
+# can't interleave cursors across threads, and the meta queries are tiny —
+# serialize them behind a lock.
+_meta_lock = threading.Lock()
 
 
 def _conn():
@@ -48,6 +53,19 @@ def _conn():
         _meta_conn = db_mod.connect()
         db_mod.init_schema(_meta_conn)
     return _meta_conn
+
+
+_duck_conn = None  # lazily-opened DuckDB connection for Parquet reads
+
+
+def _duck():
+    """A per-call DuckDB cursor. prices.py fans reads out over threads, and the
+    module-level `duckdb.execute` default connection can't interleave queries;
+    a cursor() per call is DuckDB's documented multi-thread pattern."""
+    global _duck_conn
+    if _duck_conn is None:
+        _duck_conn = duckdb.connect()
+    return _duck_conn.cursor()
 
 
 def _ensure_dirs() -> None:
@@ -73,7 +91,8 @@ def _profile_path(ticker: str) -> Path:
 
 def is_fresh(ticker: str, kind: str) -> bool:
     """True if a cache entry exists and is younger than its TTL."""
-    row = db_mod.get_cache_meta(_conn(), ticker, kind)
+    with _meta_lock:
+        row = db_mod.get_cache_meta(_conn(), ticker, kind)
     if row is None:
         return False
     try:
@@ -92,7 +111,7 @@ def is_fresh(ticker: str, kind: str) -> bool:
 def _read_series(path: Path) -> pd.Series | None:
     if not path.exists():
         return None
-    df = duckdb.execute(
+    df = _duck().execute(
         "SELECT idx, val FROM read_parquet(?) ORDER BY idx", [str(path)]
     ).df()
     if df.empty:
@@ -106,7 +125,8 @@ def _write_series(path: Path, series: pd.Series, ticker: str, kind: str) -> None
         {"idx": pd.DatetimeIndex(series.index), "val": series.to_numpy()}
     )
     df.to_parquet(path, index=False)
-    db_mod.upsert_cache_meta(_conn(), ticker, kind, len(series))
+    with _meta_lock:
+        db_mod.upsert_cache_meta(_conn(), ticker, kind, len(series))
 
 
 def read_history(ticker: str) -> pd.Series | None:
@@ -153,7 +173,8 @@ def read_profile(ticker: str) -> dict | None:
 def write_profile(ticker: str, prof: dict) -> None:
     _ensure_dirs()
     _profile_path(ticker).write_text(json.dumps(prof))
-    db_mod.upsert_cache_meta(_conn(), ticker, "profile", len(prof))
+    with _meta_lock:
+        db_mod.upsert_cache_meta(_conn(), ticker, "profile", len(prof))
 
 
 # ── analytical engine (for future backtesting / ML) ─────────────────────────

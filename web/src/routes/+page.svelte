@@ -14,12 +14,18 @@
   import { isMobile } from '$lib/isMobile.js';
 
   let d = $state(null);
-  let garden = $state(null);
   let error = $state(null);
+
+  // Garden data is a subset of the dashboard payload (cards minus jokers +
+  // period), so derive it instead of a second /api/garden request. The
+  // standalone /garden debug route still fetches that endpoint directly.
+  const garden = $derived(
+    d ? { positions: d.cards.filter((c) => !c.is_joker), period: d.period } : null
+  );
 
   onMount(async () => {
     try {
-      [d, garden] = await Promise.all([api.dashboard(), api.garden()]);
+      d = await api.dashboard();
       primeHoldings(d.cards);          // share holdings with the sidebar rail
     } catch (e) {
       error = String(e);
@@ -39,7 +45,7 @@
 
 {#if error}
   <div class="content"><p style="color:var(--loss)">Failed to load: {error}</p></div>
-{:else if d && garden}
+{:else if d}
   {#if $isMobile}
     <!-- phone: dedicated tree (tab bar, sheet, safe areas). EXCLUSIVE with the
          desktop tree — the garden's #garden-root is a singleton. -->

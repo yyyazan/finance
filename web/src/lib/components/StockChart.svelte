@@ -12,6 +12,7 @@
   import { createChart, AreaSeries, CandlestickSeries, LineSeries, HistogramSeries, ColorType, CrosshairMode, LineStyle, PriceScaleMode } from 'lightweight-charts';
   import { priceSeries } from '$lib/mockStock.js';
   import { api } from '$lib/api.js';
+  import { cachedStock, cachedIntraday } from '$lib/stockCache.js';
   import { theme } from '$lib/theme.js';
 
   let { ticker = '—', history = null, price = 100 } = $props();
@@ -90,10 +91,8 @@
     }, 180);
   });
 
-  // fetch each compared ticker's points for the current range (cached: daily
-  // history once per symbol, intraday once per symbol+feed)
-  const cmpHistCache = new Map();   // sym → Promise<stock payload>
-  const cmpIntraCache = new Map();  // `${sym}:${feed}` → Promise<intraday payload>
+  // fetch each compared ticker's points for the current range (shared module
+  // cache: daily history once per symbol, intraday once per symbol+feed)
   $effect(() => {
     const list = compares, c = cfg;
     if (!list.length) { cmpData = {}; return; }
@@ -103,13 +102,10 @@
       await Promise.all(list.map(async ({ sym }) => {
         try {
           if (c.intraday) {
-            const key = sym + ':' + c.intraday;
-            if (!cmpIntraCache.has(key)) cmpIntraCache.set(key, api.intraday(sym, c.intraday));
-            const r = await cmpIntraCache.get(key);
+            const r = await cachedIntraday(sym, c.intraday);
             out[sym] = (r?.points ?? []).filter((p) => p.c != null).map((p) => ({ time: p.t, value: p.c }));
           } else {
-            if (!cmpHistCache.has(sym)) cmpHistCache.set(sym, api.stock(sym));
-            const r = await cmpHistCache.get(sym);
+            const r = await cachedStock(sym);
             out[sym] = realSeries(r?.history ?? null, c)?.area ?? [];
           }
         } catch { out[sym] = []; }
@@ -125,7 +121,7 @@
     const t = ticker, c = cfg;
     if (!t || t === '—' || !c.intraday) { intra = null; return; }
     let cancelled = false;
-    api.intraday(t, c.intraday)
+    cachedIntraday(t, c.intraday)
       .then((r) => { if (!cancelled && r?.points?.length > 1) intra = { ...r, forRange: c.k }; })
       .catch(() => {});
     return () => { cancelled = true; };

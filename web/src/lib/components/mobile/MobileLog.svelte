@@ -8,22 +8,24 @@
   import TradeTicket from '../TradeTicket.svelte';
   import ActivityLog from '../ActivityLog.svelte';
   import { api } from '$lib/api.js';
+  import { trades as tradesStore, loadTrades } from '$lib/stores.js';
 
   let { d, refresh } = $props();
 
-  let trades = $state([]);
+  // Trades come from the shared store (TradeTicket reads the same one, so the
+  // pane doesn't fetch /api/trades a second time); transactions stay local.
+  const trades = $derived($tradesStore ?? []);
   let txns = $state([]);
-  async function loadActivity() {
-    try {
-      [trades, txns] = await Promise.all([api.trades(), api.transactions()]);
-    } catch { /* lists stay as-is */ }
+  function loadActivity(force = false) {
+    loadTrades(force);
+    api.transactions().then((x) => (txns = x ?? [])).catch(() => { /* stays as-is */ });
   }
   onMount(loadActivity);
 
   // refresh the dashboard payload AND this pane's activity lists after a save
   async function onSaved() {
     await refresh?.();
-    loadActivity();
+    loadActivity(true);
   }
 </script>
 

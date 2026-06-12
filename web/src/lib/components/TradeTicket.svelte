@@ -6,7 +6,7 @@
   // it hits the same /trades endpoint the log page uses.
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
-  import { holdings } from '$lib/stores.js';
+  import { holdings, trades as tradesStore, loadTrades } from '$lib/stores.js';
 
   const today = () => new Date().toISOString().slice(0, 10);
   const TICKER_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;
@@ -19,10 +19,10 @@
 
   let { onSaved } = $props();
 
-  // Glance data — fetched locally, refreshed after a save.
-  let trades = $state([]);
-  async function loadTrades() { trades = await api.trades(); }
-  onMount(loadTrades);
+  // Glance data — from the shared trades store (the mobile log pane reads the
+  // same store, so the dashboard only fetches /api/trades once).
+  const trades = $derived($tradesStore ?? []);
+  onMount(() => loadTrades());
 
   const monthKey = $derived(today().slice(0, 7)); // "YYYY-MM"
   const monthTrades = $derived(trades.filter((t) => (t.date || '').startsWith(monthKey)));
@@ -70,7 +70,7 @@
       });
       if (res?.ok) {
         ticker = ''; shares = ''; price = '';
-        await loadTrades();
+        await loadTrades(true);
         onSaved?.();
       } else {
         // surface the first field error from the validator

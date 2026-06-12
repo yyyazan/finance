@@ -13,15 +13,28 @@ export const detail = writable(null);
 export const searchOpen = writable(false);
 
 // Live intraday moves polled from /api/momentum: { TICKER: { day_pct, week_pct } }.
-// The sidebar rail's mover strips read this so they stay live.
+// The sidebar rail's mover strips read this so they stay live. Polling pauses
+// while the tab is hidden (no point quoting a backgrounded glance app) and
+// resumes with an immediate tick on refocus if the data has gone stale.
+const MOMENTUM_MS = 60_000;
 export const moves = writable({});
 let momentumStarted = false;
 export function startMomentum() {
   if (momentumStarted) return;
   momentumStarted = true;
-  const tick = () => api.momentum().then((m) => moves.set(m.moves ?? {})).catch(() => {});
-  tick();
-  setInterval(tick, 60_000);
+  let lastTick = 0;
+  const tick = () => {
+    lastTick = Date.now();
+    return api.momentum().then((m) => moves.set(m.moves ?? {})).catch(() => {});
+  };
+  const loop = () => {
+    if (!document.hidden) tick();
+    setTimeout(loop, MOMENTUM_MS);
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && Date.now() - lastTick > MOMENTUM_MS) tick();
+  });
+  loop();
 }
 
 let inflight = null;
@@ -41,6 +54,21 @@ export async function loadHoldings(force = false) {
 
 export function primeHoldings(cards) {
   holdings.set((cards ?? []).filter((c) => !c.is_joker));
+}
+
+// Trade history (newest first) — shared by the trade ticket tile and the mobile
+// log pane so the same page doesn't fetch /api/trades twice. null = not loaded.
+export const trades = writable(null);
+let trInflight = null;
+export function loadTrades(force = false) {
+  if (get(trades) && !force) return Promise.resolve();
+  if (trInflight) return trInflight;
+  trInflight = api
+    .trades()
+    .then((t) => trades.set(t ?? []))
+    .catch(() => {})
+    .finally(() => { trInflight = null; });
+  return trInflight;
 }
 
 // Watched (non-held) tickers: [{ ticker, name, price, dayPct }] | null = not loaded.

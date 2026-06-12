@@ -16,6 +16,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 
 from api import backup, state
@@ -64,6 +65,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Sprout API", lifespan=lifespan)
 
+# The big JSON payloads (per-stock history ≈ 150-300KB) compress ~10x.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

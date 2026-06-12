@@ -9,6 +9,7 @@ minutes. The price line reuses the already-cached prices module.
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import yfinance as yf
@@ -165,8 +166,9 @@ def related(ticker: str):
     except Exception:
         symbols = []
 
-    out: list[dict] = []
-    for sym in symbols:
+    def _related_row(sym: str) -> dict | None:
+        # quote + 15m sparkline + profile per symbol; yf.Ticker built per task
+        # (instances aren't thread-safe). None on failure → row is skipped.
         try:
             t = yf.Ticker(sym)
             fi = t.fast_info
@@ -182,16 +184,21 @@ def related(ticker: str):
                 name = prices_mod.profile(sym).get("name") or sym
             except Exception:
                 pass
-            out.append({
+            return {
                 "ticker": sym,
                 "name": name,
                 "price": _py(round(price, 2)),
                 "dayPct": _py(round((price / prev - 1) * 100, 2)) if prev else None,
                 "prevClose": _py(round(prev, 2)) if prev else None,
                 "spark": spark,
-            })
+            }
         except Exception:
-            continue
+            return None
+
+    out: list[dict] = []
+    if symbols:
+        with ThreadPoolExecutor(max_workers=len(symbols)) as pool:
+            out = [row for row in pool.map(_related_row, symbols) if row is not None]
 
     _related_cache[ticker] = (now, out)
     return {"ticker": ticker, "related": out}
@@ -325,17 +332,11 @@ def market():
     now = time.time()
     if _market_cache is not None and now - _market_cache[0] < _MARKET_TTL:
         return _market_cache[1]
+    quotes = prices_mod.quotes([sym for sym, _ in _INDICES], max_age=_MARKET_TTL)
     indices = []
     for sym, label in _INDICES:
-        price = day_pct = None
-        try:
-            fi = yf.Ticker(sym).fast_info
-            price = float(fi.last_price)
-            prev = float(fi.previous_close)
-            if prev:
-                day_pct = round((price / prev - 1) * 100, 2)
-        except Exception:
-            pass
+        price, prev = quotes[sym]["price"], quotes[sym]["prev_close"]
+        day_pct = round((price / prev - 1) * 100, 2) if (price and prev) else None
         indices.append({
             "symbol": sym, "label": label,
             "price": _py(round(price, 2)) if price is not None else None,
